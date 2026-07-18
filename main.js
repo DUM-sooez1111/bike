@@ -681,21 +681,23 @@
   rebuildPlayerVehicle();
 
   // ────────────────────────────────────────────────────────────────────────
-  // AI 차량: 트랙 순환 3대 + 외곽 경로 순찰 3대
+  // AI 차량: 정해진 경로 없이 맵 전체를 무작위로 배회합니다.
   // ────────────────────────────────────────────────────────────────────────
-  const AI_PATROL_ROUTES = [
-    [
-      [-292,-238],[-338,-62],[-315,174],[-168,318],[65,342],[278,246],[344,28],[298,-226],[92,-340],[-152,-326]
-    ],
-    [
-      [-214,-152],[-272,24],[-228,206],[-58,270],[142,238],[268,92],[236,-118],[88,-254],[-118,-248]
-    ],
-    [
-      [-82,-38],[-118,32],[-74,96],[4,128],[82,104],[124,35],[105,-52],[25,-106],[-54,-98]
-    ]
-  ].map(route => route.map(([x, z]) => new THREE.Vector3(x, 0, z)));
-
   const aiVehicles = [];
+
+  function chooseRandomAITarget(ai) {
+    const safeEdge = WORLD_HALF_SIZE - 28;
+    let targetX = 0;
+    let targetZ = 0;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      targetX = THREE.MathUtils.randFloat(-safeEdge, safeEdge);
+      targetZ = THREE.MathUtils.randFloat(-safeEdge, safeEdge);
+      if (Math.hypot(targetX - ai.pathPosition.x, targetZ - ai.pathPosition.z) > 45) break;
+    }
+    ai.wanderTarget.set(targetX, 0, targetZ);
+    ai.decisionTimer = THREE.MathUtils.randFloat(3.5, 8.5);
+    ai.wanderTurnRate = THREE.MathUtils.randFloat(.65, 1.35);
+  }
 
   function addAIVehicle(definitionIndex, color, options) {
     const model = buildVehicleModel(VEHICLES[definitionIndex], color, new Set());
@@ -715,42 +717,32 @@
       definition: VEHICLES[definitionIndex],
       speed: options.speed,
       spin: 0,
-      mode: options.mode,
-      angle: options.angle || 0,
-      direction: options.direction || 1,
-      radiusX: options.radiusX || 48,
-      radiusZ: options.radiusZ || 31,
-      route: options.route || null,
-      targetIndex: options.targetIndex || 1,
-      heading: 0,
+      heading: Math.random() * Math.PI * 2,
       pathPosition: new THREE.Vector3(),
+      wanderTarget: new THREE.Vector3(),
+      decisionTimer: 0,
+      wanderPhase: Math.random() * Math.PI * 2,
+      wanderTurnRate: 1,
       knockbackOffset: new THREE.Vector2(),
       knockbackVelocity: new THREE.Vector2(),
       collisionCooldown: 0,
       speedScale: 1,
       tiltImpulse: 0
     };
-    if (ai.mode === "patrol" && ai.route?.length) {
-      const startIndex = (ai.targetIndex - 1 + ai.route.length) % ai.route.length;
-      const start = ai.route[startIndex];
-      const target = ai.route[ai.targetIndex];
-      ai.root.position.copy(start);
-      ai.heading = Math.atan2(target.x - start.x, target.z - start.z);
-    }
+    ai.root.position.set(options.x, 0, options.z);
     ai.pathPosition.copy(ai.root.position);
+    chooseRandomAITarget(ai);
     aiVehicles.push(ai);
     return ai;
   }
 
-  // 동쪽 서킷의 서로 다른 차선과 간격으로 달리는 차량
-  addAIVehicle(1, 0x2f70ff, { mode: "track", speed: 19, angle: .2, radiusX: 46, radiusZ: 29 });
-  addAIVehicle(3, 0x55dca5, { mode: "track", speed: 16, angle: 2.35, radiusX: 49, radiusZ: 32 });
-  addAIVehicle(0, 0xff5a36, { mode: "track", speed: 17.5, angle: 4.5, radiusX: 47.5, radiusZ: 30.5 });
-
-  // 확장된 초원을 순찰하는 자동차·버기·바이크
-  addAIVehicle(2, 0xf6bd31, { mode: "patrol", speed: 14, route: AI_PATROL_ROUTES[0], targetIndex: 1 });
-  addAIVehicle(0, 0xf2f4f6, { mode: "patrol", speed: 15.5, route: AI_PATROL_ROUTES[1], targetIndex: 3 });
-  addAIVehicle(4, 0xb84fff, { mode: "patrol", speed: 17, route: AI_PATROL_ROUTES[2], targetIndex: 5 });
+  // 서로 떨어진 위치에서 출발한 뒤 각자 마음대로 방향을 바꿉니다.
+  addAIVehicle(1, 0x2f70ff, { speed: 19, x: 96, z: 8 });
+  addAIVehicle(3, 0x55dca5, { speed: 16, x: 42, z: 48 });
+  addAIVehicle(0, 0xff5a36, { speed: 17.5, x: 38, z: -46 });
+  addAIVehicle(2, 0xf6bd31, { speed: 14, x: -235, z: -155 });
+  addAIVehicle(0, 0xf2f4f6, { speed: 15.5, x: 220, z: 185 });
+  addAIVehicle(4, 0xb84fff, { speed: 17, x: -165, z: 238 });
 
   function aiCollisionRadius(ai) {
     return ai.definition.type === "bike" ? .9 : 1.45;
@@ -772,6 +764,7 @@
     ai.knockbackOffset.y += normalZ * .35;
     ai.speedScale = Math.min(ai.speedScale, .42);
     ai.collisionCooldown = .18;
+    ai.decisionTimer = Math.min(ai.decisionTimer, .8);
     const side = Math.cos(ai.heading) * normalX - Math.sin(ai.heading) * normalZ;
     ai.tiltImpulse = THREE.MathUtils.clamp(side * .18, -.18, .18);
     ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
@@ -829,30 +822,24 @@
       ai.collisionCooldown = Math.max(0, ai.collisionCooldown - dt);
       ai.speedScale = THREE.MathUtils.lerp(ai.speedScale, 1, 1 - Math.exp(-2.5 * dt));
       const actualSpeed = ai.speed * ai.speedScale;
+      ai.decisionTimer -= dt;
+      ai.wanderPhase += dt * ai.wanderTurnRate;
+      const distanceToEdge = WORLD_HALF_SIZE - Math.max(Math.abs(ai.pathPosition.x), Math.abs(ai.pathPosition.z));
+      const dx = ai.wanderTarget.x - ai.pathPosition.x;
+      const dz = ai.wanderTarget.z - ai.pathPosition.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance < 10 || ai.decisionTimer <= 0 || distanceToEdge < 18) chooseRandomAITarget(ai);
 
-      if (ai.mode === "track") {
-        const averageRadius = (ai.radiusX + ai.radiusZ) * .5;
-        ai.angle += ai.direction * actualSpeed / averageRadius * dt;
-        const x = trackCenter.x + Math.cos(ai.angle) * ai.radiusX;
-        const z = trackCenter.z + Math.sin(ai.angle) * ai.radiusZ;
-        const dx = -Math.sin(ai.angle) * ai.radiusX * ai.direction;
-        const dz = Math.cos(ai.angle) * ai.radiusZ * ai.direction;
-        ai.heading = Math.atan2(dx, dz);
-        ai.pathPosition.set(x, 0, z);
-        steering = ai.direction * .12;
-      } else {
-        const target = ai.route[ai.targetIndex];
-        const dx = target.x - ai.pathPosition.x;
-        const dz = target.z - ai.pathPosition.z;
-        const distance = Math.hypot(dx, dz);
-        if (distance < 4) ai.targetIndex = (ai.targetIndex + 1) % ai.route.length;
-        const desiredHeading = Math.atan2(dx, dz);
-        const headingDelta = Math.atan2(Math.sin(desiredHeading - ai.heading), Math.cos(desiredHeading - ai.heading));
-        ai.heading += headingDelta * (1 - Math.exp(-3.2 * dt));
-        ai.pathPosition.x += Math.sin(ai.heading) * actualSpeed * dt;
-        ai.pathPosition.z += Math.cos(ai.heading) * actualSpeed * dt;
-        steering = THREE.MathUtils.clamp(headingDelta, -.35, .35);
-      }
+      const targetDx = ai.wanderTarget.x - ai.pathPosition.x;
+      const targetDz = ai.wanderTarget.z - ai.pathPosition.z;
+      const randomWobble = Math.sin(ai.wanderPhase) * .28;
+      const desiredHeading = Math.atan2(targetDx, targetDz) + randomWobble;
+      const headingDelta = Math.atan2(Math.sin(desiredHeading - ai.heading), Math.cos(desiredHeading - ai.heading));
+      ai.heading += headingDelta * (1 - Math.exp(-2.1 * dt));
+      const wanderingSpeed = actualSpeed * (.72 + (Math.sin(ai.wanderPhase * .63) + 1) * .14);
+      ai.pathPosition.x += Math.sin(ai.heading) * wanderingSpeed * dt;
+      ai.pathPosition.z += Math.cos(ai.heading) * wanderingSpeed * dt;
+      steering = THREE.MathUtils.clamp(headingDelta, -.42, .42);
 
       ai.knockbackOffset.addScaledVector(ai.knockbackVelocity, dt);
       ai.knockbackVelocity.multiplyScalar(Math.exp(-4.2 * dt));
