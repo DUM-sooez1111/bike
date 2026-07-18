@@ -51,7 +51,7 @@
 
   const DESTINATIONS = [
     { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
-    { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 67, heading: Math.PI, unlockMinutes: 0 },
+    { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 100, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 레이싱 트랙", copy: "빠른 속도를 시험하는 타원형 서킷", icon: "🏎️", x: 73, z: 3, heading: Math.PI / 2, unlockMinutes: 13 },
     { name: "북쪽 장애물 코스", copy: "벽과 콘을 피하는 고급 주행 구역", icon: "🚧", x: -22, z: 105, heading: Math.PI, unlockMinutes: 28 }
   ];
@@ -603,7 +603,30 @@
     state.position.z += Math.cos(state.heading) * state.velocity * dt;
     resolveCollisions(previous);
 
-    const surface = getSurfaceInfo(state.position);
+    const previousSurface = getSurfaceInfo(previous);
+    let surface = getSurfaceInfo(state.position);
+
+    // 점프대의 높은 뒤쪽이나 옆면에서 경사 높이가 즉시 적용되는 현상을 막습니다.
+    // 지상 차량은 낮은 입구로 들어오거나 이미 같은 경사면 위에 있을 때만 올라갈 수 있습니다.
+    if (state.grounded && surface.ramp && previousSurface.ramp !== surface.ramp) {
+      const local = localRampCoordinates(surface.ramp, state.position);
+      const lowEntranceLimit = -surface.ramp.length / 2 + 2.2;
+      const heightStep = surface.height - state.position.y;
+      const enteredFromLowSide = local.z <= lowEntranceLimit && heightStep <= 1.1;
+      if (!enteredFromLowSide) {
+        state.position.x = previous.x;
+        state.position.z = previous.z;
+        state.velocity *= -.16;
+        surface = getSurfaceInfo(state.position);
+      }
+    }
+
+    // 경사면 옆으로 이탈하면 지면으로 순간 하강하지 않고 짧게 낙하합니다.
+    if (state.grounded && previousSurface.ramp && !surface.ramp && state.position.y > .5) {
+      state.grounded = false;
+      state.verticalVelocity = 0;
+    }
+
     // T를 누르고 전진하면 앞바퀴를 드는 윌리 묘기를 수행합니다.
     // 바이크는 큰 각도, 자동차는 무게에 맞춘 낮은 각도로 연출됩니다.
     const canWheelie = state.grounded && !surface.ramp && state.velocity > 4;
