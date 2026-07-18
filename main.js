@@ -722,7 +722,13 @@
       radiusZ: options.radiusZ || 31,
       route: options.route || null,
       targetIndex: options.targetIndex || 1,
-      heading: 0
+      heading: 0,
+      pathPosition: new THREE.Vector3(),
+      knockbackOffset: new THREE.Vector2(),
+      knockbackVelocity: new THREE.Vector2(),
+      collisionCooldown: 0,
+      speedScale: 1,
+      tiltImpulse: 0
     };
     if (ai.mode === "patrol" && ai.route?.length) {
       const startIndex = (ai.targetIndex - 1 + ai.route.length) % ai.route.length;
@@ -731,6 +737,7 @@
       ai.root.position.copy(start);
       ai.heading = Math.atan2(target.x - start.x, target.z - start.z);
     }
+    ai.pathPosition.copy(ai.root.position);
     aiVehicles.push(ai);
     return ai;
   }
@@ -745,43 +752,124 @@
   addAIVehicle(0, 0xf2f4f6, { mode: "patrol", speed: 15.5, route: AI_PATROL_ROUTES[1], targetIndex: 3 });
   addAIVehicle(4, 0xb84fff, { mode: "patrol", speed: 17, route: AI_PATROL_ROUTES[2], targetIndex: 5 });
 
+  function aiCollisionRadius(ai) {
+    return ai.definition.type === "bike" ? .9 : 1.45;
+  }
+
+  function applyAIBounce(ai, normalX, normalZ, impactSpeed = ai.speed) {
+    let length = Math.hypot(normalX, normalZ);
+    if (length < .001) {
+      normalX = -Math.sin(ai.heading);
+      normalZ = -Math.cos(ai.heading);
+      length = 1;
+    }
+    normalX /= length;
+    normalZ /= length;
+    const impulse = THREE.MathUtils.clamp(3.8 + impactSpeed * .38, 4, 14);
+    ai.knockbackVelocity.x += normalX * impulse;
+    ai.knockbackVelocity.y += normalZ * impulse;
+    ai.knockbackOffset.x += normalX * .35;
+    ai.knockbackOffset.y += normalZ * .35;
+    ai.speedScale = Math.min(ai.speedScale, .42);
+    ai.collisionCooldown = .18;
+    const side = Math.cos(ai.heading) * normalX - Math.sin(ai.heading) * normalZ;
+    ai.tiltImpulse = THREE.MathUtils.clamp(side * .18, -.18, .18);
+    ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
+    ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
+  }
+
+  function resolveAICollisions() {
+    aiVehicles.forEach(ai => {
+      const radius = aiCollisionRadius(ai);
+      for (const box of colliders) {
+        const closestX = THREE.MathUtils.clamp(ai.root.position.x, box.minX, box.maxX);
+        const closestZ = THREE.MathUtils.clamp(ai.root.position.z, box.minZ, box.maxZ);
+        const dx = ai.root.position.x - closestX;
+        const dz = ai.root.position.z - closestZ;
+        const distance = Math.hypot(dx, dz);
+        if (distance < radius && ai.root.position.y < 3.2) {
+          if (ai.collisionCooldown <= 0) applyAIBounce(ai, dx, dz, ai.speed);
+          const push = Math.max(.08, radius - distance + .08);
+          const normalLength = Math.max(distance, .001);
+          ai.knockbackOffset.x += (distance > .001 ? dx / normalLength : -Math.sin(ai.heading)) * push;
+          ai.knockbackOffset.y += (distance > .001 ? dz / normalLength : -Math.cos(ai.heading)) * push;
+          ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
+          ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
+          break;
+        }
+      }
+    });
+
+    for (let i = 0; i < aiVehicles.length; i += 1) {
+      for (let j = i + 1; j < aiVehicles.length; j += 1) {
+        const a = aiVehicles[i];
+        const b = aiVehicles[j];
+        const dx = a.root.position.x - b.root.position.x;
+        const dz = a.root.position.z - b.root.position.z;
+        const distance = Math.hypot(dx, dz);
+        const contactDistance = aiCollisionRadius(a) + aiCollisionRadius(b);
+        if (distance >= contactDistance || Math.abs(a.root.position.y - b.root.position.y) >= 2.2) continue;
+
+        const normalX = distance > .001 ? dx / distance : Math.sin(a.heading);
+        const normalZ = distance > .001 ? dz / distance : Math.cos(a.heading);
+        const overlap = contactDistance - distance + .08;
+        a.knockbackOffset.x += normalX * overlap * .5;
+        a.knockbackOffset.y += normalZ * overlap * .5;
+        b.knockbackOffset.x -= normalX * overlap * .5;
+        b.knockbackOffset.y -= normalZ * overlap * .5;
+        if (a.collisionCooldown <= 0) applyAIBounce(a, normalX, normalZ, b.speed);
+        if (b.collisionCooldown <= 0) applyAIBounce(b, -normalX, -normalZ, a.speed);
+      }
+    }
+  }
+
   function updateAIVehicles(dt) {
     aiVehicles.forEach(ai => {
       let steering = 0;
+      ai.collisionCooldown = Math.max(0, ai.collisionCooldown - dt);
+      ai.speedScale = THREE.MathUtils.lerp(ai.speedScale, 1, 1 - Math.exp(-2.5 * dt));
+      const actualSpeed = ai.speed * ai.speedScale;
 
       if (ai.mode === "track") {
         const averageRadius = (ai.radiusX + ai.radiusZ) * .5;
-        ai.angle += ai.direction * ai.speed / averageRadius * dt;
+        ai.angle += ai.direction * actualSpeed / averageRadius * dt;
         const x = trackCenter.x + Math.cos(ai.angle) * ai.radiusX;
         const z = trackCenter.z + Math.sin(ai.angle) * ai.radiusZ;
         const dx = -Math.sin(ai.angle) * ai.radiusX * ai.direction;
         const dz = Math.cos(ai.angle) * ai.radiusZ * ai.direction;
         ai.heading = Math.atan2(dx, dz);
-        ai.root.position.set(x, 0, z);
+        ai.pathPosition.set(x, 0, z);
         steering = ai.direction * .12;
       } else {
         const target = ai.route[ai.targetIndex];
-        const dx = target.x - ai.root.position.x;
-        const dz = target.z - ai.root.position.z;
+        const dx = target.x - ai.pathPosition.x;
+        const dz = target.z - ai.pathPosition.z;
         const distance = Math.hypot(dx, dz);
         if (distance < 4) ai.targetIndex = (ai.targetIndex + 1) % ai.route.length;
         const desiredHeading = Math.atan2(dx, dz);
         const headingDelta = Math.atan2(Math.sin(desiredHeading - ai.heading), Math.cos(desiredHeading - ai.heading));
         ai.heading += headingDelta * (1 - Math.exp(-3.2 * dt));
-        ai.root.position.x += Math.sin(ai.heading) * ai.speed * dt;
-        ai.root.position.z += Math.cos(ai.heading) * ai.speed * dt;
+        ai.pathPosition.x += Math.sin(ai.heading) * actualSpeed * dt;
+        ai.pathPosition.z += Math.cos(ai.heading) * actualSpeed * dt;
         steering = THREE.MathUtils.clamp(headingDelta, -.35, .35);
       }
 
+      ai.knockbackOffset.addScaledVector(ai.knockbackVelocity, dt);
+      ai.knockbackVelocity.multiplyScalar(Math.exp(-4.2 * dt));
+      ai.knockbackOffset.multiplyScalar(Math.exp(-1.8 * dt));
+      ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
+      ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
       const surface = getSurfaceInfo(ai.root.position);
       ai.root.position.y = surface.height;
       ai.root.rotation.y = ai.heading;
       ai.model.body.rotation.x = surface.pitch;
-      ai.model.body.rotation.z = -steering * .12;
-      ai.spin += ai.speed * dt / .62;
+      ai.tiltImpulse *= Math.exp(-7 * dt);
+      ai.model.body.rotation.z = -steering * .12 + ai.tiltImpulse;
+      ai.spin += actualSpeed * dt / .62;
       ai.model.wheels.forEach(wheel => { wheel.rotation.x = ai.spin; });
       ai.model.frontPivots.forEach(pivot => { pivot.rotation.y = steering; });
     });
+    resolveAICollisions();
   }
   updateAIVehicles(0);
 
@@ -948,7 +1036,10 @@
         dx * dx + dz * dz < contactDistance * contactDistance &&
         Math.abs(state.position.y - ai.root.position.y) < 2.2
       ) {
-        if (state.collisionCooldown <= 0) applyCollisionBounce(dx, dz, previous, ai.speed);
+        if (state.collisionCooldown <= 0) {
+          applyCollisionBounce(dx, dz, previous, ai.speed);
+          if (ai.collisionCooldown <= 0) applyAIBounce(ai, -dx, -dz, Math.abs(state.velocity));
+        }
         else {
           state.position.x = previous.x;
           state.position.z = previous.z;
