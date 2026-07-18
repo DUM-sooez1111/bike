@@ -68,7 +68,7 @@
   const ACCESSORIES = [
     { id: "flag", icon: "🚩", name: "트레일 깃발" },
     { id: "lights", icon: "✨", name: "루프 라이트" },
-    { id: "spoiler", icon: "🏁", name: "스포츠 스포일러" },
+    { id: "spoiler", icon: "🏁", name: "스포츠 스포일러", excludeTypes: ["bike"] },
     { id: "antenna", icon: "📡", name: "탐험 안테나" }
   ];
 
@@ -458,6 +458,7 @@
   function buildVehicleModel(definition, paintHex, equipped = new Set()) {
     const root = new THREE.Group();
     const body = new THREE.Group();
+    const isBike = definition.type === "bike";
     root.add(body);
     const paint = flatMaterial(paintHex, .55, .08);
     const paintDark = flatMaterial(new THREE.Color(paintHex).multiplyScalar(.68), .65, .06);
@@ -530,20 +531,53 @@
     }
 
     // 선택된 무료 장신구를 실제 3D 모델에 추가합니다.
-    if (equipped.has("spoiler") && definition.type !== "bike") {
+    if (equipped.has("spoiler") && !isBike) {
       makeMesh(new THREE.BoxGeometry(3.35, .14, .55), MAT.dark, 0, 2.05, -2.25, body);
       makeMesh(new THREE.BoxGeometry(.13, .58, .13), MAT.dark, -1.1, 1.8, -2.2, body);
       makeMesh(new THREE.BoxGeometry(.13, .58, .13), MAT.dark, 1.1, 1.8, -2.2, body);
     }
     if (equipped.has("lights")) {
-      for (let x = -.6; x <= .6; x += .4) makeMesh(new THREE.SphereGeometry(.12, 7, 5), MAT.white, x, definition.type === "bike" ? 2.2 : 2.35, .1, body);
+      const lightPositions = isBike ? [-.24, 0, .24] : [-.6, -.2, .2, .6];
+      lightPositions.forEach(x => {
+        makeMesh(
+          new THREE.SphereGeometry(isBike ? .1 : .12, 7, 5),
+          MAT.white,
+          x,
+          isBike ? 1.72 : 2.35,
+          isBike ? 1.57 : .1,
+          body
+        );
+      });
     }
     if (equipped.has("antenna")) {
-      makeMesh(new THREE.CylinderGeometry(.025, .025, 1.5, 5), MAT.dark, .65, definition.type === "bike" ? 2.2 : 2.8, -.55, body);
+      makeMesh(
+        new THREE.CylinderGeometry(.025, .025, isBike ? 1.1 : 1.5, 5),
+        MAT.dark,
+        isBike ? .24 : .65,
+        isBike ? 2.18 : 2.8,
+        isBike ? -.92 : -.55,
+        body
+      );
     }
     if (equipped.has("flag")) {
-      makeMesh(new THREE.CylinderGeometry(.025, .025, 2.2, 5), MAT.dark, -.75, 2.5, -1.25, body);
-      const flag = makeMesh(new THREE.PlaneGeometry(.8, .5), MAT.orange, -.38, 3.35, -1.25, body);
+      const flagX = isBike ? -.24 : -.75;
+      const flagZ = isBike ? -1.18 : -1.25;
+      makeMesh(
+        new THREE.CylinderGeometry(.025, .025, isBike ? 1.45 : 2.2, 5),
+        MAT.dark,
+        flagX,
+        isBike ? 2.15 : 2.5,
+        flagZ,
+        body
+      );
+      const flag = makeMesh(
+        new THREE.PlaneGeometry(isBike ? .65 : .8, isBike ? .4 : .5),
+        MAT.orange,
+        flagX + (isBike ? .29 : .37),
+        isBike ? 2.68 : 3.35,
+        flagZ,
+        body
+      );
       flag.rotation.y = Math.PI / 2;
     }
     return { root, body, wheels, frontPivots };
@@ -553,6 +587,36 @@
   let previewIndex = 0;
   let selectedPaint = VEHICLES[0].color;
   const equipped = new Set();
+
+  // 컬러와 장신구는 새로고침 후에도 유지합니다. 손상된 저장값은 안전하게 무시합니다.
+  try {
+    const savedPaintValue = localStorage.getItem("neon-trails-paint");
+    const savedPaint = Number(savedPaintValue);
+    if (savedPaintValue !== null && Number.isInteger(savedPaint) && savedPaint >= 0 && savedPaint <= 0xffffff) {
+      selectedPaint = savedPaint;
+    }
+
+    const savedAccessories = JSON.parse(localStorage.getItem("neon-trails-accessories") || "[]");
+    const knownAccessoryIds = new Set(ACCESSORIES.map(item => item.id));
+    if (Array.isArray(savedAccessories)) {
+      savedAccessories.filter(id => knownAccessoryIds.has(id)).forEach(id => equipped.add(id));
+    }
+  } catch (error) {
+    console.warn("저장된 장신구 설정을 불러오지 못했습니다.", error);
+  }
+
+  function saveCustomization() {
+    try {
+      localStorage.setItem("neon-trails-paint", String(selectedPaint));
+      localStorage.setItem("neon-trails-accessories", JSON.stringify([...equipped]));
+    } catch (error) {
+      console.warn("장신구 설정을 저장하지 못했습니다.", error);
+    }
+  }
+
+  function isAccessoryCompatible(item, definition = VEHICLES[selectedIndex]) {
+    return !(item.excludeTypes || []).includes(definition.type);
+  }
   let vehicleVisual = null;
   const vehicle = new THREE.Group();
   scene.add(vehicle);
@@ -1047,22 +1111,33 @@
         aria-label="${paint.name}" title="${paint.name}" data-color="${paint.value}" style="--swatch:#${paint.value.toString(16).padStart(6,"0")}"></button>`).join("");
     $$(".color-swatch").forEach(button => button.addEventListener("click", () => {
       selectedPaint = Number(button.dataset.color);
+      saveCustomization();
       rebuildPlayerVehicle();
       rebuildPreview();
       renderAccessories();
       showToast("차량 컬러를 적용했습니다.");
     }));
 
-    $("#accessory-options").innerHTML = ACCESSORIES.map(item => `
-      <button class="accessory-item ${equipped.has(item.id) ? "selected" : ""}" type="button" data-accessory="${item.id}">
-        <span>${item.icon}</span><div><b>${item.name}</b><small>${equipped.has(item.id) ? "장착됨" : "무료 장착"}</small></div>
-      </button>`).join("");
+    $("#accessory-options").innerHTML = ACCESSORIES.map(item => {
+      const compatible = isAccessoryCompatible(item);
+      const isEquipped = equipped.has(item.id);
+      const status = compatible
+        ? (isEquipped ? "장착됨 · 클릭해 해제" : "무료 장착")
+        : (isEquipped ? "자동차 전용 · 보관 중" : "현재 차량 장착 불가");
+      return `
+        <button class="accessory-item ${isEquipped && compatible ? "selected" : ""} ${isEquipped && !compatible ? "stored" : ""}"
+          type="button" data-accessory="${item.id}" ${compatible ? "" : "disabled"} aria-pressed="${isEquipped && compatible}">
+          <span>${item.icon}</span><div><b>${item.name}</b><small>${status}</small></div>
+        </button>`;
+    }).join("");
     $$(".accessory-item").forEach(button => button.addEventListener("click", () => {
       const id = button.dataset.accessory;
       if (equipped.has(id)) equipped.delete(id); else equipped.add(id);
+      saveCustomization();
       rebuildPlayerVehicle();
       rebuildPreview();
       renderAccessories();
+      showToast(equipped.has(id) ? "장신구를 장착했습니다." : "장신구를 해제했습니다.");
     }));
   }
 
@@ -1112,6 +1187,7 @@
   $("#select-vehicle").addEventListener("click", () => {
     selectedIndex = previewIndex;
     selectedPaint = VEHICLES[selectedIndex].color;
+    saveCustomization();
     rebuildPlayerVehicle();
     updateVehicleDetail();
     renderVehicleList();
@@ -1145,6 +1221,7 @@
       selectedPaint = 0xeceff2;
     }
     if (reward.credits) addCredits(reward.credits, "", false);
+    saveCustomization();
     rebuildPlayerVehicle();
     rebuildPreview();
     renderAccessories();
