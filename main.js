@@ -90,6 +90,8 @@
   const speedText = $("#speed");
   const fpsText = $("#fps");
   const jumpStatus = $("#jump-status");
+  const WORLD_HALF_SIZE = 245;
+  const WORLD_SIZE = WORLD_HALF_SIZE * 2;
 
   // ────────────────────────────────────────────────────────────────────────
   // 렌더러 / 씬 / 조명
@@ -105,9 +107,9 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x91cbed);
-  scene.fog = new THREE.Fog(0x9bcde3, 85, 270);
+  scene.fog = new THREE.Fog(0x9bcde3, 135, 430);
 
-  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 650);
+  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 900);
   camera.position.set(0, 7, -14);
 
   const flatMaterial = (color, roughness = 0.86, metalness = 0.02) =>
@@ -149,7 +151,7 @@
 
   // 이미지 파일이 없어도 자연스러운 그라데이션 하늘이 보이는 스카이 돔입니다.
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(310, 24, 12),
+    new THREE.SphereGeometry(480, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {
@@ -172,17 +174,17 @@
   const colliders = [];
   const ramps = [];
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(330, 330), MAT.grass);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30), MAT.grass);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   world.add(ground);
 
   // 잔디의 단조로움을 깨는 큰 다각형 패치
   const patchGeo = new THREE.CircleGeometry(1, 7);
-  for (let i = 0; i < 95; i += 1) {
+  for (let i = 0; i < 165; i += 1) {
     const patch = new THREE.Mesh(patchGeo, i % 5 === 0 ? MAT.dirt : (i % 2 ? MAT.grassLight : MAT.grassDark));
     patch.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI);
-    patch.position.set((Math.random() - .5) * 285, .008, (Math.random() - .5) * 285);
+    patch.position.set((Math.random() - .5) * (WORLD_SIZE - 24), .008, (Math.random() - .5) * (WORLD_SIZE - 24));
     patch.scale.set(3 + Math.random() * 7, 1.5 + Math.random() * 3.5, 1);
     world.add(patch);
   }
@@ -201,10 +203,10 @@
   }
 
   // 외곽 벽
-  addBox(0, 1.2, -145, 290, 2.4, 2.3, MAT.concrete);
-  addBox(0, 1.2, 145, 290, 2.4, 2.3, MAT.concrete);
-  addBox(-145, 1.2, 0, 2.3, 2.4, 290, MAT.concrete);
-  addBox(145, 1.2, 0, 2.3, 2.4, 290, MAT.concrete);
+  addBox(0, 1.2, -WORLD_HALF_SIZE, WORLD_SIZE, 2.4, 2.3, MAT.concrete);
+  addBox(0, 1.2, WORLD_HALF_SIZE, WORLD_SIZE, 2.4, 2.3, MAT.concrete);
+  addBox(-WORLD_HALF_SIZE, 1.2, 0, 2.3, 2.4, WORLD_SIZE, MAT.concrete);
+  addBox(WORLD_HALF_SIZE, 1.2, 0, 2.3, 2.4, WORLD_SIZE, MAT.concrete);
 
   // 동쪽 타원형 레이싱 트랙: 짧은 직육면체를 곡선에 맞춰 이어 붙입니다.
   const trackCenter = new THREE.Vector3(68, 0, 5);
@@ -298,6 +300,17 @@
     [-78,68,.9],[-18,52,1.1],[26,-82,1.2],[-93,15,1.1]
   ].forEach(p => addTree(...p));
 
+  // 확장된 외곽 지역에도 듬성듬성 숲을 배치해 넓어진 공간의 깊이감을 유지합니다.
+  for (let i = 0; i < 42; i += 1) {
+    const angle = i / 42 * Math.PI * 2 + (Math.random() - .5) * .08;
+    const radius = 158 + Math.random() * 68;
+    addTree(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      .85 + Math.random() * .65
+    );
+  }
+
   for (let i = 0; i < 28; i += 1) {
     const angle = i / 28 * Math.PI * 2;
     const radius = 96 + Math.random() * 30;
@@ -309,12 +322,23 @@
     world.add(rock);
   }
 
+  for (let i = 0; i < 38; i += 1) {
+    const angle = i / 38 * Math.PI * 2;
+    const radius = 155 + Math.random() * 68;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.6 + Math.random() * 1.35, 0), MAT.rock);
+    rock.position.set(Math.cos(angle) * radius, .58, Math.sin(angle) * radius);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.scale.y = .5 + Math.random() * .55;
+    rock.castShadow = true;
+    world.add(rock);
+  }
+
   // 맵 경계 밖 배경 산
-  for (let i = 0; i < 32; i += 1) {
-    const angle = i / 32 * Math.PI * 2;
-    const radius = 182 + Math.random() * 24;
-    const mountain = new THREE.Mesh(new THREE.ConeGeometry(18 + Math.random() * 16, 35 + Math.random() * 30, 5), i % 3 ? MAT.rock : MAT.concreteDark);
-    mountain.position.set(Math.cos(angle) * radius, 10, Math.sin(angle) * radius);
+  for (let i = 0; i < 38; i += 1) {
+    const angle = i / 38 * Math.PI * 2;
+    const radius = WORLD_HALF_SIZE + 62 + Math.random() * 34;
+    const mountain = new THREE.Mesh(new THREE.ConeGeometry(22 + Math.random() * 18, 42 + Math.random() * 35, 5), i % 3 ? MAT.rock : MAT.concreteDark);
+    mountain.position.set(Math.cos(angle) * radius, 12, Math.sin(angle) * radius);
     mountain.rotation.y = Math.random() * Math.PI;
     world.add(mountain);
   }
@@ -335,6 +359,8 @@
   addCloud(-55, 40, 25, 1.5);
   addCloud(60, 46, 0, 1.1);
   addCloud(15, 34, 94, 1.3);
+  addCloud(-165, 48, 105, 1.25);
+  addCloud(180, 42, -120, 1.35);
 
   // 시작 지점의 실제 차량 스폰 패드
   const spawnPad = new THREE.Group();
@@ -663,7 +689,7 @@
       }
     }
 
-    if (state.position.y < -8 || Math.abs(state.position.x) > 158 || Math.abs(state.position.z) > 158) {
+    if (state.position.y < -8 || Math.abs(state.position.x) > WORLD_HALF_SIZE + 12 || Math.abs(state.position.z) > WORLD_HALF_SIZE + 12) {
       placeVehicle(0, -12, 0, "맵 밖으로 벗어나 스폰 지점으로 돌아왔습니다.");
     }
 
