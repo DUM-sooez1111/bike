@@ -495,6 +495,111 @@
   }
   rebuildPlayerVehicle();
 
+  // ────────────────────────────────────────────────────────────────────────
+  // AI 차량: 트랙 순환 3대 + 외곽 경로 순찰 3대
+  // ────────────────────────────────────────────────────────────────────────
+  const AI_PATROL_ROUTES = [
+    [
+      [-178,-142],[-190,40],[-145,166],[-24,205],[112,180],[194,72],[180,-126],[45,-198],[-95,-190]
+    ],
+    [
+      [-122,-78],[-168,8],[-132,110],[-42,154],[72,142],[150,70],[145,-58],[62,-142],[-55,-145]
+    ],
+    [
+      [-82,-38],[-118,32],[-74,96],[4,128],[82,104],[124,35],[105,-52],[25,-106],[-54,-98]
+    ]
+  ].map(route => route.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+
+  const aiVehicles = [];
+
+  function addAIVehicle(definitionIndex, color, options) {
+    const model = buildVehicleModel(VEHICLES[definitionIndex], color, new Set());
+    const root = new THREE.Group();
+    root.add(model.root);
+    // AI가 많아져도 그림자 비용이 급증하지 않도록 수신 그림자만 유지합니다.
+    model.root.traverse(node => {
+      if (node.isMesh) {
+        node.castShadow = false;
+        node.receiveShadow = true;
+      }
+    });
+    scene.add(root);
+    const ai = {
+      root,
+      model,
+      definition: VEHICLES[definitionIndex],
+      speed: options.speed,
+      spin: 0,
+      mode: options.mode,
+      angle: options.angle || 0,
+      direction: options.direction || 1,
+      radiusX: options.radiusX || 48,
+      radiusZ: options.radiusZ || 31,
+      route: options.route || null,
+      targetIndex: options.targetIndex || 1,
+      heading: 0
+    };
+    if (ai.mode === "patrol" && ai.route?.length) {
+      const startIndex = (ai.targetIndex - 1 + ai.route.length) % ai.route.length;
+      const start = ai.route[startIndex];
+      const target = ai.route[ai.targetIndex];
+      ai.root.position.copy(start);
+      ai.heading = Math.atan2(target.x - start.x, target.z - start.z);
+    }
+    aiVehicles.push(ai);
+    return ai;
+  }
+
+  // 동쪽 서킷의 서로 다른 차선과 간격으로 달리는 차량
+  addAIVehicle(1, 0x2f70ff, { mode: "track", speed: 19, angle: .2, radiusX: 46, radiusZ: 29 });
+  addAIVehicle(3, 0x55dca5, { mode: "track", speed: 16, angle: 2.35, radiusX: 49, radiusZ: 32 });
+  addAIVehicle(0, 0xff5a36, { mode: "track", speed: 17.5, angle: 4.5, radiusX: 47.5, radiusZ: 30.5 });
+
+  // 확장된 초원을 순찰하는 자동차·버기·바이크
+  addAIVehicle(2, 0xf6bd31, { mode: "patrol", speed: 14, route: AI_PATROL_ROUTES[0], targetIndex: 1 });
+  addAIVehicle(0, 0xf2f4f6, { mode: "patrol", speed: 15.5, route: AI_PATROL_ROUTES[1], targetIndex: 3 });
+  addAIVehicle(4, 0xb84fff, { mode: "patrol", speed: 17, route: AI_PATROL_ROUTES[2], targetIndex: 5 });
+
+  function updateAIVehicles(dt) {
+    aiVehicles.forEach(ai => {
+      let steering = 0;
+
+      if (ai.mode === "track") {
+        const averageRadius = (ai.radiusX + ai.radiusZ) * .5;
+        ai.angle += ai.direction * ai.speed / averageRadius * dt;
+        const x = trackCenter.x + Math.cos(ai.angle) * ai.radiusX;
+        const z = trackCenter.z + Math.sin(ai.angle) * ai.radiusZ;
+        const dx = -Math.sin(ai.angle) * ai.radiusX * ai.direction;
+        const dz = Math.cos(ai.angle) * ai.radiusZ * ai.direction;
+        ai.heading = Math.atan2(dx, dz);
+        ai.root.position.set(x, 0, z);
+        steering = ai.direction * .12;
+      } else {
+        const target = ai.route[ai.targetIndex];
+        const dx = target.x - ai.root.position.x;
+        const dz = target.z - ai.root.position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < 4) ai.targetIndex = (ai.targetIndex + 1) % ai.route.length;
+        const desiredHeading = Math.atan2(dx, dz);
+        const headingDelta = Math.atan2(Math.sin(desiredHeading - ai.heading), Math.cos(desiredHeading - ai.heading));
+        ai.heading += headingDelta * (1 - Math.exp(-3.2 * dt));
+        ai.root.position.x += Math.sin(ai.heading) * ai.speed * dt;
+        ai.root.position.z += Math.cos(ai.heading) * ai.speed * dt;
+        steering = THREE.MathUtils.clamp(headingDelta, -.35, .35);
+      }
+
+      const surface = getSurfaceInfo(ai.root.position);
+      ai.root.position.y = surface.height;
+      ai.root.rotation.y = ai.heading;
+      ai.model.body.rotation.x = surface.pitch;
+      ai.model.body.rotation.z = -steering * .12;
+      ai.spin += ai.speed * dt / .62;
+      ai.model.wheels.forEach(wheel => { wheel.rotation.x = ai.spin; });
+      ai.model.frontPivots.forEach(pivot => { pivot.rotation.y = steering; });
+    });
+  }
+  updateAIVehicles(0);
+
   // 지면 접지감을 위한 부드러운 가짜 그림자
   const shadowCanvas = document.createElement("canvas");
   shadowCanvas.width = shadowCanvas.height = 128;
@@ -587,6 +692,21 @@
         state.position.x = previous.x;
         state.position.z = previous.z;
         state.velocity *= -.22;
+        return;
+      }
+    }
+    for (const ai of aiVehicles) {
+      const aiRadius = ai.definition.type === "bike" ? .9 : 1.45;
+      const dx = state.position.x - ai.root.position.x;
+      const dz = state.position.z - ai.root.position.z;
+      const contactDistance = radius + aiRadius;
+      if (
+        dx * dx + dz * dz < contactDistance * contactDistance &&
+        Math.abs(state.position.y - ai.root.position.y) < 2.2
+      ) {
+        state.position.x = previous.x;
+        state.position.z = previous.z;
+        state.velocity *= -.18;
         return;
       }
     }
@@ -1125,7 +1245,10 @@
     requestAnimationFrame(animate);
     const dt = Math.min((now - lastTime) / 1000, .05);
     lastTime = now;
-    if (started && !paused && !uiOpen) updatePhysics(dt);
+    if (started && !paused && !uiOpen) {
+      updateAIVehicles(dt);
+      updatePhysics(dt);
+    }
     updateCamera(dt);
     updateUI(dt);
     updateTimedMenus();
