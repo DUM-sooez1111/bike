@@ -91,7 +91,7 @@
   const loading = $("#loading");
   const speedText = $("#speed");
   const fpsText = $("#fps");
-  const jumpStatus = $("#jump-status");
+  const driftStatus = $("#drift-status");
   const moneyText = $("#money");
   const WORLD_HALF_SIZE = 400;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
@@ -816,12 +816,14 @@
     velocity: 0,
     verticalVelocity: 0,
     heading: Number.isFinite(savedHeading) ? savedHeading : 0,
+    travelHeading: Number.isFinite(savedHeading) ? savedHeading : 0,
     grounded: true,
     pitch: 0,
     roll: 0,
     wheelie: 0,
     wheelSpin: 0,
     steerVisual: 0,
+    drift: 0,
     knockback: new THREE.Vector2(),
     collisionCooldown: 0
   };
@@ -830,13 +832,11 @@
     maxReverse: 13,
     rollingDrag: 2.15,
     airDrag: .015,
-    gravity: 24,
-    jumpVelocity: 9.7
+    gravity: 24
   };
   let started = false;
   let paused = false;
   let uiOpen = false;
-  let jumpQueued = false;
   let distanceForCredits = 0;
 
   function currentVehicle() { return VEHICLES[selectedIndex]; }
@@ -849,10 +849,12 @@
     state.velocity = 0;
     state.verticalVelocity = 0;
     state.heading = heading;
+    state.travelHeading = heading;
     state.grounded = true;
     state.pitch = spawnSurface.pitch;
     state.roll = 0;
     state.wheelie = 0;
+    state.drift = 0;
     state.knockback.set(0, 0);
     state.collisionCooldown = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
@@ -885,7 +887,7 @@
 
   function getRampForwardSpeed(ramp) {
     // 점프대의 로컬 +Z(낮은 입구 → 높은 끝) 방향으로 이동하는 실제 속도입니다.
-    return state.velocity * Math.cos(state.heading - ramp.rotationY);
+    return state.velocity * Math.cos(state.travelHeading - ramp.rotationY);
   }
 
   function launchFromRamp(ramp, forwardSpeed) {
@@ -963,6 +965,10 @@
     const braking = !!keys.shift;
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
+    const onRampBeforeMove = !!getSurfaceInfo(state.position).ramp;
+    const canDrift = state.grounded && !onRampBeforeMove && Math.abs(state.velocity) > 6;
+    const driftTarget = keys[" "] && canDrift ? 1 : 0;
+    state.drift = THREE.MathUtils.lerp(state.drift, driftTarget, 1 - Math.exp(-(driftTarget ? 8 : 11) * dt));
 
     if (throttle) state.velocity += (state.velocity < -.5 ? spec.braking * .62 : spec.acceleration) * dt;
     if (reverse) state.velocity -= (state.velocity > .5 ? spec.braking * .62 : PHYSICS.reverseAcceleration) * dt;
@@ -979,6 +985,10 @@
       state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), drag * dt);
     }
     state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed);
+    if (state.drift > .02) {
+      const driftDrag = (.9 + Math.abs(state.velocity) * .045) * state.drift;
+      state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), driftDrag * dt);
+    }
 
     const speedRatio = Math.min(Math.abs(state.velocity) / spec.maxSpeed, 1);
     const highSpeedSteering = THREE.MathUtils.lerp(1, .43, speedRatio);
@@ -986,11 +996,20 @@
     const moving = THREE.MathUtils.clamp(Math.abs(state.velocity) / 3.8, 0, 1);
     // 앞바퀴가 들린 동안에는 지면 접지력이 줄어 조향이 조금 둔해집니다.
     const wheelieSteering = THREE.MathUtils.lerp(1, .48, THREE.MathUtils.clamp(state.wheelie / .55, 0, 1));
-    state.heading += steer * spec.handling * highSpeedSteering * airControl * wheelieSteering * moving * (state.velocity >= 0 ? 1 : -1) * dt;
+    const driftSteering = THREE.MathUtils.lerp(1, 1.85, state.drift);
+    state.heading += steer * spec.handling * highSpeedSteering * airControl * wheelieSteering * driftSteering * moving * (state.velocity >= 0 ? 1 : -1) * dt;
+
+    // 차체는 먼저 꺾이고 실제 이동 방향은 늦게 따라오므로 드리프트 중 옆으로 미끄러집니다.
+    const headingDelta = Math.atan2(
+      Math.sin(state.heading - state.travelHeading),
+      Math.cos(state.heading - state.travelHeading)
+    );
+    const tireGrip = THREE.MathUtils.lerp(11, 1.65, state.drift);
+    state.travelHeading += headingDelta * (1 - Math.exp(-tireGrip * dt));
 
     const previous = state.position.clone();
-    state.position.x += Math.sin(state.heading) * state.velocity * dt;
-    state.position.z += Math.cos(state.heading) * state.velocity * dt;
+    state.position.x += Math.sin(state.travelHeading) * state.velocity * dt;
+    state.position.z += Math.cos(state.travelHeading) * state.velocity * dt;
     state.position.x += state.knockback.x * dt;
     state.position.z += state.knockback.y * dt;
     state.knockback.multiplyScalar(Math.exp(-4.8 * dt));
@@ -1037,11 +1056,6 @@
     const wheelieTarget = keys.t && canWheelie ? (spec.type === "bike" ? .68 : .27) : 0;
     const wheelieResponse = wheelieTarget > state.wheelie ? 7.5 : 10;
     state.wheelie = THREE.MathUtils.lerp(state.wheelie, wheelieTarget, 1 - Math.exp(-wheelieResponse * dt));
-    if (jumpQueued && state.grounded) {
-      state.verticalVelocity = PHYSICS.jumpVelocity;
-      state.grounded = false;
-    }
-    jumpQueued = false;
 
     if (!state.grounded) {
       state.verticalVelocity -= PHYSICS.gravity * dt;
@@ -1058,7 +1072,7 @@
     } else {
       state.position.y = surface.height;
       state.pitch = THREE.MathUtils.lerp(state.pitch, surface.pitch, 1 - Math.exp(-10 * dt));
-      const lean = spec.type === "bike" ? .24 : .065;
+      const lean = (spec.type === "bike" ? .24 : .065) + state.drift * (spec.type === "bike" ? .08 : .055);
       state.roll = THREE.MathUtils.lerp(state.roll, -steer * speedRatio * lean, 1 - Math.exp(-8 * dt));
       if (surface.ramp && surface.progress > .93) {
         const forwardSpeed = getRampForwardSpeed(surface.ramp);
@@ -1072,7 +1086,7 @@
 
     state.wheelSpin += state.velocity * dt / .62;
     vehicleVisual.wheels.forEach(wheel => { wheel.rotation.x = state.wheelSpin; });
-    state.steerVisual = THREE.MathUtils.lerp(state.steerVisual, steer * .38, 1 - Math.exp(-12 * dt));
+    state.steerVisual = THREE.MathUtils.lerp(state.steerVisual, steer * (.38 + state.drift * .16), 1 - Math.exp(-12 * dt));
     vehicleVisual.frontPivots.forEach(pivot => { pivot.rotation.y = state.steerVisual; });
 
     vehicle.position.copy(state.position);
@@ -1505,7 +1519,6 @@
       placeVehicle(0, -12, 0, `${currentVehicle().name}을(를) 스폰했습니다.`);
       return;
     }
-    if (key === " " && !event.repeat) jumpQueued = true;
     keys[key] = true;
   });
   window.addEventListener("keyup", event => { keys[event.key.toLowerCase()] = false; });
@@ -1515,7 +1528,6 @@
     const set = value => {
       const key = button.dataset.key;
       keys[key] = value;
-      if (key === " " && value) jumpQueued = true;
     };
     button.addEventListener("pointerdown", event => { event.preventDefault(); set(true); });
     button.addEventListener("pointerup", () => set(false));
@@ -1570,9 +1582,16 @@
       fpsFrames = 0;
       fpsElapsed = 0;
     }
-    jumpStatus.classList.toggle("locked", !state.grounded);
-    jumpStatus.classList.toggle("ready", state.grounded);
-    jumpStatus.querySelector("b").textContent = state.grounded ? "점프 가능" : "공중 이동 중";
+    const driftReady = state.grounded && Math.abs(state.velocity) > 6;
+    driftStatus.classList.toggle("locked", !driftReady);
+    driftStatus.classList.toggle("ready", driftReady);
+    driftStatus.querySelector("b").textContent = !state.grounded
+      ? "공중 이동 중"
+      : state.drift > .2
+        ? "드리프트 중"
+        : driftReady
+          ? "드리프트 가능"
+          : "속도를 올리세요";
     const distanceToPad = Math.hypot(state.position.x, state.position.z + 12);
     $("#interaction-prompt").classList.toggle("visible", started && !paused && !uiOpen && distanceToPad < 10);
     padRing.material.color.setHex(distanceToPad < 10 ? 0x6fffd0 : 0x16c7ff);
