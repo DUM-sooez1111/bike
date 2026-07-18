@@ -531,20 +531,6 @@
     if (message) showToast(message);
   }
 
-  function resetVehicle() {
-    // 차가 뒤집혔거나 맵에서 이탈했을 때 현재 XZ 위치를 유지하며 바로 세웁니다.
-    state.position.y = Math.max(0, getSurfaceInfo(state.position).height);
-    state.velocity = 0;
-    state.verticalVelocity = 0;
-    state.grounded = true;
-    state.pitch = 0;
-    state.roll = 0;
-    state.wheelie = 0;
-    vehicleVisual.body.rotation.set(0, 0, 0);
-    vehicleVisual.body.position.y = 0;
-    showToast("차량을 바른 방향으로 복구했습니다.");
-  }
-
   function localRampCoordinates(ramp, position) {
     const dx = position.x - ramp.x;
     const dz = position.z - ramp.z;
@@ -1006,14 +992,13 @@
   // 키보드, 터치 입력. 폼 요소에 입력 중일 때는 게임 조작을 막습니다.
   window.addEventListener("keydown", event => {
     const key = event.key.toLowerCase();
-    if (["w","a","s","d","shift"," ","t","r","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
+    if (["w","a","s","d","shift"," ","t","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
     if (key === "escape" && started) {
       if (drawer.classList.contains("open")) closeDrawer();
       else setPaused(!paused);
       return;
     }
     if (uiOpen || paused) return;
-    if (key === "r") { resetVehicle(); return; }
     if (key === "v" && state.position.distanceTo(new THREE.Vector3(0, state.position.y, -12)) < 11) {
       placeVehicle(0, -12, 0, `${currentVehicle().name}을(를) 스폰했습니다.`);
       return;
