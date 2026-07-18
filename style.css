@@ -1,0 +1,390 @@
+:root {
+  --ink: #0d1c22;
+  --cream: #f7f3e9;
+  --orange: #ff5b24;
+  --lime: #b9e769;
+  --glass: rgba(10, 24, 30, 0.78);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#game {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #8bc8e9;
+}
+
+body {
+  color: var(--cream);
+  font-family: "Arial", "Malgun Gothic", system-ui, sans-serif;
+  user-select: none;
+  touch-action: none;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+#hud {
+  position: fixed;
+  z-index: 5;
+  top: clamp(18px, 3vw, 36px);
+  left: clamp(18px, 3vw, 42px);
+  min-width: 225px;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.16));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 700 13px/1 "Arial", sans-serif;
+  letter-spacing: 0.15em;
+}
+
+.brand-mark {
+  width: 18px;
+  height: 8px;
+  background: var(--orange);
+  clip-path: polygon(0 0, 100% 0, 72% 100%, 0 100%);
+}
+
+.speed-row {
+  display: flex;
+  align-items: flex-end;
+  margin-top: 5px;
+  font-family: "Arial Narrow", "Arial", sans-serif;
+  line-height: 0.82;
+}
+
+.speed-row strong {
+  min-width: 138px;
+  font-size: clamp(64px, 8vw, 92px);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+}
+
+.speed-row > span {
+  margin: 0 0 9px 9px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.hud-meta {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding-top: 9px;
+  border-top: 2px solid rgba(255, 255, 255, 0.8);
+  font: 600 11px/1 "Arial", sans-serif;
+  letter-spacing: 0.08em;
+}
+
+.hud-meta b {
+  color: var(--lime);
+}
+
+.divider {
+  width: 1px;
+  height: 11px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+#jump-status {
+  transition: opacity 160ms ease;
+}
+
+#jump-status i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 8px rgba(185, 231, 105, 0.8);
+}
+
+#jump-status.locked {
+  opacity: 0.5;
+}
+
+#jump-status.locked i {
+  background: #e7b4a4;
+  box-shadow: none;
+}
+
+#controls {
+  position: fixed;
+  z-index: 5;
+  right: clamp(18px, 3vw, 42px);
+  bottom: clamp(18px, 3vw, 34px);
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+}
+
+.key-group {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 4px;
+  justify-items: center;
+}
+
+.key-group:first-child .key:first-child {
+  grid-column: 2;
+}
+
+.key-group:first-child .key:nth-child(2) {
+  grid-column: 1;
+}
+
+.key-group small {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  font: 700 9px/1 "Arial", sans-serif;
+  letter-spacing: 0.13em;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.key {
+  display: grid;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 6px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 4px;
+  background: rgba(13, 28, 34, 0.52);
+  box-shadow: inset 0 -2px rgba(0, 0, 0, 0.18);
+  font: 700 10px/1 "Arial", sans-serif;
+  backdrop-filter: blur(4px);
+}
+
+.key.wide {
+  min-width: 50px;
+}
+
+#sound-toggle {
+  position: fixed;
+  z-index: 6;
+  right: clamp(18px, 3vw, 42px);
+  top: clamp(18px, 3vw, 36px);
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  color: white;
+  background: rgba(13, 28, 34, 0.42);
+  cursor: pointer;
+  backdrop-filter: blur(5px);
+}
+
+#sound-toggle.active {
+  color: var(--lime);
+}
+
+.overlay {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: linear-gradient(90deg, rgba(8, 20, 25, 0.82), rgba(8, 20, 25, 0.12));
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 350ms ease, visibility 350ms ease;
+}
+
+.overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.panel {
+  width: min(92vw, 550px);
+  padding: clamp(30px, 5vw, 62px);
+  border-left: 4px solid var(--orange);
+  background: linear-gradient(135deg, rgba(10, 25, 30, 0.94), rgba(14, 35, 41, 0.74));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(10px);
+}
+
+.eyebrow {
+  margin: 0 0 18px;
+  color: var(--lime);
+  font: 700 11px/1 "Arial", sans-serif;
+  letter-spacing: 0.25em;
+}
+
+h1,
+h2 {
+  margin: 0;
+  color: var(--cream);
+  font-family: Impact, "Arial Narrow", "Arial", sans-serif;
+  font-weight: 800;
+  line-height: 0.72;
+  letter-spacing: -0.035em;
+}
+
+h1 {
+  font-size: clamp(82px, 16vw, 150px);
+}
+
+h1 em {
+  color: var(--orange);
+  font-style: italic;
+}
+
+h2 {
+  font-size: clamp(72px, 13vw, 118px);
+}
+
+.intro {
+  margin: 30px 0;
+  color: rgba(247, 243, 233, 0.78);
+  font: 500 14px/1.75 "Arial", "Malgun Gothic", sans-serif;
+}
+
+#start-button,
+#resume-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border: 0;
+  color: white;
+  background: var(--orange);
+  cursor: pointer;
+  font: 700 12px/1 "Arial", "Malgun Gothic", sans-serif;
+  letter-spacing: 0.13em;
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+#start-button:hover,
+#resume-button:hover {
+  transform: translateY(-2px);
+  background: #ff713f;
+}
+
+#start-button b,
+#resume-button b {
+  font-size: 21px;
+}
+
+.hint {
+  margin: 15px 0 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.pause-panel {
+  max-width: 480px;
+}
+
+#loading {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  color: var(--ink);
+  background: #a8d7ee;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 300ms ease, visibility 300ms ease;
+}
+
+#loading.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+#loading span {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(13, 28, 34, 0.15);
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+#loading p {
+  font: 700 11px/1 "Arial", "Malgun Gothic", sans-serif;
+  letter-spacing: 0.14em;
+}
+
+#error-message {
+  position: fixed;
+  z-index: 30;
+  inset: auto 18px 18px;
+  display: none;
+  padding: 14px;
+  color: white;
+  background: #b82d2d;
+  font-size: 13px;
+  text-align: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 700px) {
+  #controls {
+    left: 16px;
+    right: 16px;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  #hud {
+    min-width: 190px;
+  }
+
+  .speed-row strong {
+    min-width: 110px;
+  }
+
+  .overlay {
+    background: rgba(8, 20, 25, 0.55);
+  }
+
+  .panel {
+    padding: 32px 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

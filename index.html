@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#78bde7" />
+    <title>POLY DRIVE — 3D 자동차 게임</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="game" aria-label="3D 자동차 게임">
+      <canvas id="game-canvas"></canvas>
+
+      <section id="hud" aria-live="polite">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>POLY DRIVE</span>
+        </div>
+        <div class="speed-row">
+          <strong id="speed">000</strong>
+          <span>KM/H</span>
+        </div>
+        <div class="hud-meta">
+          <span>FPS <b id="fps">60</b></span>
+          <span class="divider"></span>
+          <span id="jump-status"><i></i> JUMP READY</span>
+        </div>
+      </section>
+
+      <section id="controls" aria-label="조작법">
+        <div class="key-group">
+          <span class="key">W</span>
+          <span class="key">A</span>
+          <span class="key">S</span>
+          <span class="key">D</span>
+          <small>DRIVE</small>
+        </div>
+        <div class="key-group">
+          <span class="key wide">SHIFT</span>
+          <small>BRAKE</small>
+        </div>
+        <div class="key-group">
+          <span class="key wide">SPACE</span>
+          <small>JUMP</small>
+        </div>
+        <div class="key-group desktop-only">
+          <span class="key">R</span>
+          <small>RESET</small>
+        </div>
+      </section>
+
+      <button id="sound-toggle" type="button" aria-label="엔진 소리 켜기" title="엔진 소리">
+        <span class="sound-icon">♪</span>
+      </button>
+
+      <section id="start-screen" class="overlay visible">
+        <div class="panel">
+          <p class="eyebrow">LOW POLY / OPEN WORLD</p>
+          <h1>POLY<br /><em>DRIVE</em></h1>
+          <p class="intro">잔디 위를 질주하고, 언덕을 넘어<br />가장 멋진 점프를 만들어 보세요.</p>
+          <button id="start-button" type="button">
+            <span>START ENGINE</span>
+            <b>→</b>
+          </button>
+          <p class="hint">키보드로 조작 · ESC 일시정지</p>
+        </div>
+      </section>
+
+      <section id="pause-screen" class="overlay">
+        <div class="panel pause-panel">
+          <p class="eyebrow">ENGINE IDLE</p>
+          <h2>PAUSED</h2>
+          <button id="resume-button" type="button">
+            <span>계속 달리기</span>
+            <b>→</b>
+          </button>
+          <p class="hint">ESC 키로 돌아가기</p>
+        </div>
+      </section>
+
+      <div id="loading" class="visible">
+        <span></span>
+        <p>세상을 만드는 중…</p>
+      </div>
+      <div id="error-message" role="alert"></div>
+    </main>
+
+    <!-- 라이브러리를 프로젝트에 포함해 인터넷 없이도 바로 실행됩니다. -->
+    <script src="vendor/three.min.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
