@@ -482,6 +482,7 @@
     grounded: true,
     pitch: 0,
     roll: 0,
+    wheelie: 0,
     wheelSpin: 0,
     steerVisual: 0
   };
@@ -509,7 +510,9 @@
     state.grounded = true;
     state.pitch = 0;
     state.roll = 0;
+    state.wheelie = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
+    vehicleVisual.body.position.y = 0;
     if (message) showToast(message);
   }
 
@@ -521,7 +524,9 @@
     state.grounded = true;
     state.pitch = 0;
     state.roll = 0;
+    state.wheelie = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
+    vehicleVisual.body.position.y = 0;
     showToast("차량을 바른 방향으로 복구했습니다.");
   }
 
@@ -587,7 +592,9 @@
     const highSpeedSteering = THREE.MathUtils.lerp(1, .43, speedRatio);
     const airControl = state.grounded ? 1 : .07;
     const moving = THREE.MathUtils.clamp(Math.abs(state.velocity) / 3.8, 0, 1);
-    state.heading += steer * spec.handling * highSpeedSteering * airControl * moving * (state.velocity >= 0 ? 1 : -1) * dt;
+    // 앞바퀴가 들린 동안에는 지면 접지력이 줄어 조향이 조금 둔해집니다.
+    const wheelieSteering = THREE.MathUtils.lerp(1, .48, THREE.MathUtils.clamp(state.wheelie / .55, 0, 1));
+    state.heading += steer * spec.handling * highSpeedSteering * airControl * wheelieSteering * moving * (state.velocity >= 0 ? 1 : -1) * dt;
 
     const previous = state.position.clone();
     state.position.x += Math.sin(state.heading) * state.velocity * dt;
@@ -595,6 +602,12 @@
     resolveCollisions(previous);
 
     const surface = getSurfaceInfo(state.position);
+    // T를 누르고 전진하면 앞바퀴를 드는 윌리 묘기를 수행합니다.
+    // 바이크는 큰 각도, 자동차는 무게에 맞춘 낮은 각도로 연출됩니다.
+    const canWheelie = state.grounded && !surface.ramp && state.velocity > 4;
+    const wheelieTarget = keys.t && canWheelie ? (spec.type === "bike" ? .68 : .27) : 0;
+    const wheelieResponse = wheelieTarget > state.wheelie ? 7.5 : 10;
+    state.wheelie = THREE.MathUtils.lerp(state.wheelie, wheelieTarget, 1 - Math.exp(-wheelieResponse * dt));
     if (jumpQueued && state.grounded) {
       state.verticalVelocity = PHYSICS.jumpVelocity;
       state.grounded = false;
@@ -636,8 +649,10 @@
 
     vehicle.position.copy(state.position);
     vehicle.rotation.y = state.heading;
-    vehicleVisual.body.rotation.x = state.pitch;
+    vehicleVisual.body.rotation.x = state.pitch - state.wheelie;
     vehicleVisual.body.rotation.z = state.roll;
+    // 회전 중심 때문에 뒷바퀴가 지면 아래로 내려가지 않도록 차체를 함께 들어 줍니다.
+    vehicleVisual.body.position.y = Math.sin(state.wheelie) * (spec.type === "bike" ? 1.48 : 1.35);
     blobShadow.position.set(state.position.x, .025, state.position.z);
     blobShadow.material.opacity = THREE.MathUtils.clamp(.48 - state.position.y * .045, .08, .48);
     blobShadow.scale.setScalar(1 + state.position.y * .035);
@@ -926,7 +941,7 @@
   // 키보드, 터치 입력. 폼 요소에 입력 중일 때는 게임 조작을 막습니다.
   window.addEventListener("keydown", event => {
     const key = event.key.toLowerCase();
-    if (["w","a","s","d","shift"," ","r","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
+    if (["w","a","s","d","shift"," ","t","r","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
     if (key === "escape" && started) {
       if (drawer.classList.contains("open")) closeDrawer();
       else setPaused(!paused);
