@@ -50,9 +50,10 @@
   ];
 
   const DESTINATIONS = [
-    { name: "시작 지점", copy: "차량 스폰 패드", icon: "🏁", from: "#1e7790", to: "#1c2835", x: 0, z: -12, heading: 0 },
-    { name: "메가 점프장", copy: "가장 높은 북쪽 점프대", icon: "🚀", from: "#a95c2e", to: "#35231c", x: -38, z: 67, heading: Math.PI },
-    { name: "레이싱 트랙", copy: "동쪽 타원형 서킷", icon: "🏎️", from: "#4e58a6", to: "#24253b", x: 73, z: 3, heading: Math.PI / 2 }
+    { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
+    { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 67, heading: Math.PI, unlockMinutes: 0 },
+    { name: "동쪽 레이싱 트랙", copy: "빠른 속도를 시험하는 타원형 서킷", icon: "🏎️", x: 73, z: 3, heading: Math.PI / 2, unlockMinutes: 13 },
+    { name: "북쪽 장애물 코스", copy: "벽과 콘을 피하는 고급 주행 구역", icon: "🚧", x: -22, z: 105, heading: Math.PI, unlockMinutes: 28 }
   ];
 
   const PAINTS = [
@@ -69,6 +70,17 @@
     { id: "lights", icon: "✨", name: "루프 라이트" },
     { id: "spoiler", icon: "🏁", name: "스포츠 스포일러" },
     { id: "antenna", icon: "📡", name: "탐험 안테나" }
+  ];
+
+  // 참고 이미지의 시간을 분 단위로 올림한 3·8·13·18·28·43·58분 보상입니다.
+  const SESSION_REWARDS = [
+    { minute: 3, icon: "🍎", name: "루비 레드 컬러", copy: "강렬한 레드 페인트", paint: 0xf05a35 },
+    { minute: 8, icon: "🎨", name: "민트 러시 컬러", copy: "산뜻한 민트 페인트", paint: 0x52d39a },
+    { minute: 13, icon: "🦴", name: "탐험 안테나", copy: "무료 장신구 자동 장착", accessory: "antenna" },
+    { minute: 18, icon: "🍔", name: "트레일 깃발", copy: "무료 장신구 자동 장착", accessory: "flag" },
+    { minute: 28, icon: "✨", name: "루프 라이트", copy: "무료 장신구 자동 장착", accessory: "lights" },
+    { minute: 43, icon: "🎆", name: "스포츠 스포일러", copy: "무료 장신구 자동 장착", accessory: "spoiler" },
+    { minute: 58, icon: "🧊", name: "풀 커스텀 팩", copy: "모든 장신구와 스노 화이트 컬러", all: true, featured: true }
   ];
 
   const $ = (selector) => document.querySelector(selector);
@@ -821,12 +833,20 @@
   }
 
   function renderDestinations() {
+    const elapsed = getSessionSeconds();
     $("#teleport-list").innerHTML = DESTINATIONS.map((destination, index) => `
-      <button class="destination-card" type="button" data-destination="${index}">
-        <span class="destination-art" style="--from:${destination.from};--to:${destination.to}">${destination.icon}</span>
-        <div><h3>${destination.name}</h3><p>${destination.copy}</p></div>
-      </button>`).join("");
-    $$(".destination-card").forEach(button => button.addEventListener("click", () => {
+      <article class="teleport-row ${elapsed < destination.unlockMinutes * 60 ? "locked" : ""}">
+        <span class="teleport-row-icon">${destination.icon}</span>
+        <div>
+          <h3>${destination.name}</h3>
+          <p>${elapsed < destination.unlockMinutes * 60 ? `${destination.unlockMinutes}분 접속 시 무료 해금` : destination.copy}</p>
+        </div>
+        <button class="teleport-action" type="button" data-destination="${index}"
+          ${elapsed < destination.unlockMinutes * 60 ? "disabled" : ""}>
+          ${elapsed < destination.unlockMinutes * 60 ? "잠김" : "이동"}
+        </button>
+      </article>`).join("");
+    $$(".teleport-action:not(:disabled)").forEach(button => button.addEventListener("click", () => {
       const destination = DESTINATIONS[Number(button.dataset.destination)];
       placeVehicle(destination.x, destination.z, destination.heading, `${destination.name}(으)로 이동했습니다.`);
       closeDrawer();
@@ -868,26 +888,67 @@
 
   $("#spawn-button").addEventListener("click", () => placeVehicle(0, -12, 0, `${currentVehicle().name}을(를) 스폰했습니다.`));
 
-  // 로컬 날짜만 저장하므로 로그인이나 결제가 전혀 필요 없습니다.
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let giftClaimed = false;
-  try { giftClaimed = localStorage.getItem("neon-trails-gift") === todayKey; } catch (_) { /* file:// 제한 시 메모리 상태만 사용 */ }
-  function updateGift() {
-    $("#claim-gift").disabled = giftClaimed;
-    $("#claim-gift").textContent = giftClaimed ? "오늘 수령 완료 ✓" : "무료로 받기";
-    $("#gift-copy").textContent = giftClaimed ? "내일 또 새로운 무료 보상을 확인하세요." : "별도 조건 없이 바로 받을 수 있습니다.";
+  // 게임 시작 후 흐른 실제 접속 시간을 계산합니다. 결제나 외부 계정은 사용하지 않습니다.
+  let sessionStartedAt = null;
+  const claimedSessionRewards = new Set();
+  let lastTimedUiSecond = -1;
+
+  function getSessionSeconds() {
+    if (!sessionStartedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000));
   }
-  $("#claim-gift").addEventListener("click", () => {
-    if (giftClaimed) return;
-    giftClaimed = true;
-    selectedPaint = 0xf05a35;
-    try { localStorage.setItem("neon-trails-gift", todayKey); } catch (_) { /* 저장 불가 환경에서도 보상은 적용 */ }
+
+  function applySessionReward(index) {
+    const reward = SESSION_REWARDS[index];
+    const elapsed = getSessionSeconds();
+    if (!reward || claimedSessionRewards.has(index) || elapsed < reward.minute * 60) return;
+
+    claimedSessionRewards.add(index);
+    if (reward.paint) selectedPaint = reward.paint;
+    if (reward.accessory) equipped.add(reward.accessory);
+    if (reward.all) {
+      ACCESSORIES.forEach(item => equipped.add(item.id));
+      selectedPaint = 0xeceff2;
+    }
     rebuildPlayerVehicle();
     rebuildPreview();
     renderAccessories();
-    updateGift();
-    showToast("선셋 오렌지 컬러를 무료로 받았습니다!");
-  });
+    renderRewardBoard();
+    showToast(`${reward.name} 보상을 받았습니다!`);
+  }
+
+  function renderRewardBoard() {
+    const elapsed = getSessionSeconds();
+    const roundedElapsedMinutes = elapsed > 0 ? Math.ceil(elapsed / 60) : 0;
+    $("#session-time").textContent = `접속 ${roundedElapsedMinutes}분`;
+    $("#reward-grid").innerHTML = SESSION_REWARDS.map((reward, index) => {
+      const remainingSeconds = Math.max(0, reward.minute * 60 - elapsed);
+      const remainingMinutes = Math.ceil(remainingSeconds / 60);
+      const claimed = claimedSessionRewards.has(index);
+      const ready = remainingSeconds === 0 && !claimed;
+      const buttonText = claimed ? "수령 완료 ✓" : ready ? "받기" : `${remainingMinutes}분 남음`;
+      return `
+        <article class="reward-card ${reward.featured ? "featured" : ""}">
+          ${reward.featured ? `<b class="reward-card-badge">한정 보상!</b><span class="reward-icon">${reward.icon}</span>` : ""}
+          <div class="reward-content">
+            ${reward.featured ? "" : `<span class="reward-icon">${reward.icon}</span>`}
+            <h3>${reward.name}</h3>
+            <p>${reward.minute}분 접속 보상 · ${reward.copy}</p>
+          </div>
+          <button class="reward-claim ${claimed ? "claimed" : ready ? "ready" : ""}" type="button"
+            data-reward="${index}" ${claimed || !ready ? "disabled" : ""}>${buttonText}</button>
+        </article>`;
+    }).join("");
+    $$(".reward-claim.ready").forEach(button => button.addEventListener("click", () => applySessionReward(Number(button.dataset.reward))));
+  }
+
+  function updateTimedMenus() {
+    const second = getSessionSeconds();
+    if (second === lastTimedUiSecond) return;
+    lastTimedUiSecond = second;
+    renderRewardBoard();
+    renderDestinations();
+  }
 
   function applyQuality(value) {
     const ratio = value === "low" ? 1 : value === "medium" ? 1.35 : 1.65;
@@ -984,6 +1045,8 @@
   $("#start-button").addEventListener("click", () => {
     started = true;
     paused = false;
+    if (!sessionStartedAt) sessionStartedAt = Date.now();
+    lastTimedUiSecond = -1;
     startScreen.classList.remove("visible");
     showToast("시작 패드에서 V 키 또는 버튼으로 차량을 다시 소환할 수 있습니다.");
     lastTime = performance.now();
@@ -993,7 +1056,7 @@
   updateVehicleDetail();
   renderAccessories();
   renderDestinations();
-  updateGift();
+  renderRewardBoard();
 
   // ────────────────────────────────────────────────────────────────────────
   // 메인 루프 / HUD / 반응형 리사이즈
@@ -1027,6 +1090,7 @@
     if (started && !paused && !uiOpen) updatePhysics(dt);
     updateCamera(dt);
     updateUI(dt);
+    updateTimedMenus();
     updateAudio();
     if (previewVisual) previewVisual.root.rotation.y += dt * .28;
     if (drawer.classList.contains("open") && $(".drawer-panel.active")?.dataset.panelContent === "garage") {
