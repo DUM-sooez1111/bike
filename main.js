@@ -53,7 +53,9 @@
     { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
     { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 100, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 레이싱 트랙", copy: "빠른 속도를 시험하는 타원형 서킷", icon: "🏎️", x: 73, z: 3, heading: Math.PI / 2, unlockMinutes: 13 },
-    { name: "북쪽 장애물 코스", copy: "벽과 콘을 피하는 고급 주행 구역", icon: "🚧", x: -22, z: 105, heading: Math.PI, unlockMinutes: 28 }
+    { name: "북쪽 장애물 코스", copy: "벽과 콘을 피하는 고급 주행 구역", icon: "🚧", x: -22, z: 105, heading: Math.PI, unlockMinutes: 28 },
+    { name: "서쪽 바람 평원", copy: "긴 흙길과 대형 점프대가 있는 외곽 초원", icon: "🌬️", x: -270, z: 42, heading: -Math.PI / 2, unlockMinutes: 18 },
+    { name: "남쪽 소나무 숲", copy: "코인과 바위가 흩어진 깊은 숲길", icon: "🌲", x: 68, z: -292, heading: 0, unlockMinutes: 43 }
   ];
 
   const PAINTS = [
@@ -91,7 +93,7 @@
   const fpsText = $("#fps");
   const jumpStatus = $("#jump-status");
   const moneyText = $("#money");
-  const WORLD_HALF_SIZE = 245;
+  const WORLD_HALF_SIZE = 400;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
   const SAVE_KEY = "neon-trails-save-v1";
   let savedGame = {};
@@ -138,9 +140,9 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x91cbed);
-  scene.fog = new THREE.Fog(0x9bcde3, 135, 430);
+  scene.fog = new THREE.Fog(0x9bcde3, 180, 680);
 
-  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 900);
+  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 1200);
   camera.position.set(0, 7, -14);
 
   const flatMaterial = (color, roughness = 0.86, metalness = 0.02) =>
@@ -182,7 +184,7 @@
 
   // 이미지 파일이 없어도 자연스러운 그라데이션 하늘이 보이는 스카이 돔입니다.
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(480, 24, 12),
+    new THREE.SphereGeometry(760, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {
@@ -212,7 +214,7 @@
 
   // 잔디의 단조로움을 깨는 큰 다각형 패치
   const patchGeo = new THREE.CircleGeometry(1, 7);
-  for (let i = 0; i < 165; i += 1) {
+  for (let i = 0; i < 300; i += 1) {
     const patch = new THREE.Mesh(patchGeo, i % 5 === 0 ? MAT.dirt : (i % 2 ? MAT.grassLight : MAT.grassDark));
     patch.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI);
     patch.position.set((Math.random() - .5) * (WORLD_SIZE - 24), .008, (Math.random() - .5) * (WORLD_SIZE - 24));
@@ -282,6 +284,12 @@
   addRamp(52, 61, -Math.PI / 2, 8, 14, 4);
   addRamp(-38, 78, Math.PI, 12, 21, 6.2);
   addRamp(82, -45, Math.PI / 2, 7, 12, 3.3);
+  addRamp(-286, 42, Math.PI / 2, 13, 24, 7.2);
+  addRamp(68, -276, 0, 10, 19, 5.5);
+
+  // 새 외곽 지역으로 이어지는 긴 흙길입니다.
+  addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
+  addBox(68, .025, -218, 10, .05, 150, MAT.dirt, 0, false);
 
   // 컨테이너, 콘, 낮은 벽 등 충돌 장애물
   [
@@ -342,6 +350,17 @@
     );
   }
 
+  // 800×800으로 넓어진 새 외곽 숲. 경계까지 풍경이 비지 않도록 두 겹으로 배치합니다.
+  for (let i = 0; i < 92; i += 1) {
+    const angle = i / 92 * Math.PI * 2 + (Math.random() - .5) * .075;
+    const radius = 250 + Math.random() * 122;
+    addTree(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      .8 + Math.random() * .75
+    );
+  }
+
   for (let i = 0; i < 28; i += 1) {
     const angle = i / 28 * Math.PI * 2;
     const radius = 96 + Math.random() * 30;
@@ -360,6 +379,17 @@
     rock.position.set(Math.cos(angle) * radius, .58, Math.sin(angle) * radius);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     rock.scale.y = .5 + Math.random() * .55;
+    rock.castShadow = true;
+    world.add(rock);
+  }
+
+  for (let i = 0; i < 64; i += 1) {
+    const angle = i / 64 * Math.PI * 2 + Math.random() * .06;
+    const radius = 245 + Math.random() * 125;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.55 + Math.random() * 1.45, 0), MAT.rock);
+    rock.position.set(Math.cos(angle) * radius, .55, Math.sin(angle) * radius);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.scale.y = .48 + Math.random() * .58;
     rock.castShadow = true;
     world.add(rock);
   }
@@ -392,6 +422,8 @@
   addCloud(15, 34, 94, 1.3);
   addCloud(-165, 48, 105, 1.25);
   addCloud(180, 42, -120, 1.35);
+  addCloud(-310, 52, -175, 1.5);
+  addCloud(285, 45, 230, 1.4);
 
   // 시작 지점의 실제 차량 스폰 패드
   const spawnPad = new THREE.Group();
@@ -419,7 +451,10 @@
     [0,-3],[11,18],[-18,34],[-48,-42],[54,58],[-37,91],
     [116,5],[68,36],[20,5],[68,-26],[101,25],[36,-15],
     [-116,-82],[-168,22],[-124,142],[-22,190],[112,166],[184,65],
-    [168,-118],[48,-182],[-88,-174],[144,112],[-182,-126],[8,152]
+    [168,-118],[48,-182],[-88,-174],[144,112],[-182,-126],[8,152],
+    [-286,42],[-330,-65],[-292,188],[-165,305],[5,342],[178,308],
+    [315,175],[342,-18],[298,-204],[164,-328],[-20,-346],[-194,-304],
+    [-322,-190],[68,-292],[236,252],[-248,264]
   ];
 
   MONEY_PICKUP_POSITIONS.forEach(([x, z]) => {
@@ -650,10 +685,10 @@
   // ────────────────────────────────────────────────────────────────────────
   const AI_PATROL_ROUTES = [
     [
-      [-178,-142],[-190,40],[-145,166],[-24,205],[112,180],[194,72],[180,-126],[45,-198],[-95,-190]
+      [-292,-238],[-338,-62],[-315,174],[-168,318],[65,342],[278,246],[344,28],[298,-226],[92,-340],[-152,-326]
     ],
     [
-      [-122,-78],[-168,8],[-132,110],[-42,154],[72,142],[150,70],[145,-58],[62,-142],[-55,-145]
+      [-214,-152],[-272,24],[-228,206],[-58,270],[142,238],[268,92],[236,-118],[88,-254],[-118,-248]
     ],
     [
       [-82,-38],[-118,32],[-74,96],[4,128],[82,104],[124,35],[105,-52],[25,-106],[-54,-98]
@@ -809,11 +844,13 @@
 
   function placeVehicle(x, z, heading = 0, message = "") {
     state.position.set(x, 0, z);
+    const spawnSurface = getSurfaceInfo(state.position, 0);
+    state.position.y = spawnSurface.height;
     state.velocity = 0;
     state.verticalVelocity = 0;
     state.heading = heading;
     state.grounded = true;
-    state.pitch = 0;
+    state.pitch = spawnSurface.pitch;
     state.roll = 0;
     state.wheelie = 0;
     state.knockback.set(0, 0);
@@ -831,15 +868,30 @@
     return { x: dx * c - dz * s, z: dx * s + dz * c };
   }
 
-  function getSurfaceInfo(position) {
+  function getSurfaceInfo(position, margin = .8) {
     for (const ramp of ramps) {
       const local = localRampCoordinates(ramp, position);
-      if (Math.abs(local.x) <= ramp.width / 2 + .8 && local.z >= -ramp.length / 2 - .8 && local.z <= ramp.length / 2 + .8) {
+      if (
+        Math.abs(local.x) <= ramp.width / 2 + margin &&
+        local.z >= -ramp.length / 2 - margin &&
+        local.z <= ramp.length / 2 + margin
+      ) {
         const progress = THREE.MathUtils.clamp((local.z + ramp.length / 2) / ramp.length, 0, 1);
         return { height: progress * ramp.height, pitch: -Math.atan2(ramp.height, ramp.length), ramp, progress };
       }
     }
     return { height: 0, pitch: 0, ramp: null, progress: 0 };
+  }
+
+  function getRampForwardSpeed(ramp) {
+    // 점프대의 로컬 +Z(낮은 입구 → 높은 끝) 방향으로 이동하는 실제 속도입니다.
+    return state.velocity * Math.cos(state.heading - ramp.rotationY);
+  }
+
+  function launchFromRamp(ramp, forwardSpeed) {
+    const angle = Math.atan2(ramp.height, ramp.length);
+    state.verticalVelocity = Math.max(4.8, forwardSpeed * Math.sin(angle) * .72);
+    state.grounded = false;
   }
 
   function applyCollisionBounce(normalX, normalZ, previous, extraImpact = 0) {
@@ -968,10 +1020,15 @@
       }
     }
 
-    // 경사면 옆으로 이탈하면 지면으로 순간 하강하지 않고 짧게 낙하합니다.
+    // 프레임 사이에 높은 끝을 넘어가도 이륙 속도를 잃지 않도록 이전 경사면에서 점프를 계산합니다.
     if (state.grounded && previousSurface.ramp && !surface.ramp && state.position.y > .5) {
-      state.grounded = false;
-      state.verticalVelocity = 0;
+      const forwardSpeed = getRampForwardSpeed(previousSurface.ramp);
+      if (previousSurface.progress > .72 && forwardSpeed > 5) {
+        launchFromRamp(previousSurface.ramp, forwardSpeed);
+      } else {
+        state.grounded = false;
+        state.verticalVelocity = 0;
+      }
     }
 
     // T를 누르고 전진하면 앞바퀴를 드는 윌리 묘기를 수행합니다.
@@ -1003,10 +1060,9 @@
       state.pitch = THREE.MathUtils.lerp(state.pitch, surface.pitch, 1 - Math.exp(-10 * dt));
       const lean = spec.type === "bike" ? .24 : .065;
       state.roll = THREE.MathUtils.lerp(state.roll, -steer * speedRatio * lean, 1 - Math.exp(-8 * dt));
-      if (surface.ramp && surface.progress > .93 && state.velocity > 5) {
-        const angle = Math.atan2(surface.ramp.height, surface.ramp.length);
-        state.verticalVelocity = Math.max(4.8, state.velocity * Math.sin(angle) * .72);
-        state.grounded = false;
+      if (surface.ramp && surface.progress > .93) {
+        const forwardSpeed = getRampForwardSpeed(surface.ramp);
+        if (forwardSpeed > 5) launchFromRamp(surface.ramp, forwardSpeed);
       }
     }
 
