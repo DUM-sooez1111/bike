@@ -93,8 +93,20 @@
   const moneyText = $("#money");
   const WORLD_HALF_SIZE = 245;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
+  const SAVE_KEY = "neon-trails-save-v1";
+  let savedGame = {};
+  try {
+    const parsedSave = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
+    if (parsedSave && typeof parsedSave === "object") savedGame = parsedSave;
+  } catch (error) {
+    console.warn("저장 데이터를 읽지 못해 새 게임으로 시작합니다.", error);
+  }
+
   let credits = 0;
-  try { credits = Math.max(0, Number(localStorage.getItem("neon-trails-credits")) || 0); } catch (_) { /* 저장 제한 환경에서는 현재 실행 중에만 유지 */ }
+  try {
+    const legacyCredits = Number(localStorage.getItem("neon-trails-credits")) || 0;
+    credits = Math.max(0, Number(savedGame.credits) || legacyCredits);
+  } catch (_) { /* 저장 제한 환경에서는 현재 실행 중에만 유지 */ }
 
   function updateMoneyDisplay() {
     moneyText.textContent = new Intl.NumberFormat("ko-KR").format(Math.floor(credits));
@@ -104,6 +116,7 @@
     credits = Math.max(0, credits + Math.floor(amount));
     updateMoneyDisplay();
     try { localStorage.setItem("neon-trails-credits", String(credits)); } catch (_) { /* file:// 저장 제한 허용 */ }
+    saveGame(false);
     const chip = $(".money-chip");
     chip.classList.remove("bump");
     requestAnimationFrame(() => chip.classList.add("bump"));
@@ -583,20 +596,23 @@
     return { root, body, wheels, frontPivots };
   }
 
-  let selectedIndex = 0;
-  let previewIndex = 0;
-  let selectedPaint = VEHICLES[0].color;
+  const savedVehicleIndex = Number(savedGame.selectedVehicle);
+  let selectedIndex = Number.isInteger(savedVehicleIndex) && VEHICLES[savedVehicleIndex] ? savedVehicleIndex : 0;
+  let previewIndex = selectedIndex;
+  let selectedPaint = VEHICLES[selectedIndex].color;
   const equipped = new Set();
 
   // 컬러와 장신구는 새로고침 후에도 유지합니다. 손상된 저장값은 안전하게 무시합니다.
   try {
-    const savedPaintValue = localStorage.getItem("neon-trails-paint");
+    const savedPaintValue = savedGame.paint ?? localStorage.getItem("neon-trails-paint");
     const savedPaint = Number(savedPaintValue);
     if (savedPaintValue !== null && Number.isInteger(savedPaint) && savedPaint >= 0 && savedPaint <= 0xffffff) {
       selectedPaint = savedPaint;
     }
 
-    const savedAccessories = JSON.parse(localStorage.getItem("neon-trails-accessories") || "[]");
+    const savedAccessories = Array.isArray(savedGame.accessories)
+      ? savedGame.accessories
+      : JSON.parse(localStorage.getItem("neon-trails-accessories") || "[]");
     const knownAccessoryIds = new Set(ACCESSORIES.map(item => item.id));
     if (Array.isArray(savedAccessories)) {
       savedAccessories.filter(id => knownAccessoryIds.has(id)).forEach(id => equipped.add(id));
@@ -609,6 +625,7 @@
     try {
       localStorage.setItem("neon-trails-paint", String(selectedPaint));
       localStorage.setItem("neon-trails-accessories", JSON.stringify([...equipped]));
+      saveGame(false);
     } catch (error) {
       console.warn("장신구 설정을 저장하지 못했습니다.", error);
     }
@@ -753,17 +770,25 @@
   // 자동차 물리
   // ────────────────────────────────────────────────────────────────────────
   const keys = Object.create(null);
+  const savedPosition = savedGame.position || {};
+  const savedX = Number(savedPosition.x);
+  const savedZ = Number(savedPosition.z);
+  const canRestorePosition = Number.isFinite(savedX) && Number.isFinite(savedZ)
+    && Math.abs(savedX) < WORLD_HALF_SIZE - 3 && Math.abs(savedZ) < WORLD_HALF_SIZE - 3;
+  const savedHeading = Number(savedGame.heading);
   const state = {
-    position: new THREE.Vector3(0, 0, -12),
+    position: new THREE.Vector3(canRestorePosition ? savedX : 0, 0, canRestorePosition ? savedZ : -12),
     velocity: 0,
     verticalVelocity: 0,
-    heading: 0,
+    heading: Number.isFinite(savedHeading) ? savedHeading : 0,
     grounded: true,
     pitch: 0,
     roll: 0,
     wheelie: 0,
     wheelSpin: 0,
-    steerVisual: 0
+    steerVisual: 0,
+    knockback: new THREE.Vector2(),
+    collisionCooldown: 0
   };
   const PHYSICS = {
     reverseAcceleration: 11,
@@ -791,6 +816,8 @@
     state.pitch = 0;
     state.roll = 0;
     state.wheelie = 0;
+    state.knockback.set(0, 0);
+    state.collisionCooldown = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
     vehicleVisual.body.position.y = 0;
     if (message) showToast(message);
@@ -815,6 +842,33 @@
     return { height: 0, pitch: 0, ramp: null, progress: 0 };
   }
 
+  function applyCollisionBounce(normalX, normalZ, previous, extraImpact = 0) {
+    let length = Math.hypot(normalX, normalZ);
+    if (length < .001) {
+      const travelDirection = state.velocity >= 0 ? 1 : -1;
+      normalX = -Math.sin(state.heading) * travelDirection;
+      normalZ = -Math.cos(state.heading) * travelDirection;
+      length = 1;
+    }
+    normalX /= length;
+    normalZ /= length;
+
+    // 충돌면 바깥쪽으로 즉시 밀어내고, 별도의 수평 반동 속도를 감쇠시키며 적용합니다.
+    const impactSpeed = Math.abs(state.velocity);
+    const impulse = THREE.MathUtils.clamp(4 + impactSpeed * .48 + extraImpact * .16, 4, 19);
+    state.position.x = previous.x + normalX * Math.min(.45 + impactSpeed * .025, 1.2);
+    state.position.z = previous.z + normalZ * Math.min(.45 + impactSpeed * .025, 1.2);
+    state.knockback.set(normalX * impulse, normalZ * impulse);
+    state.velocity *= -.3;
+    state.collisionCooldown = .16;
+
+    // 측면 충돌은 차체가 충돌 반대쪽으로 잠깐 기울어져 타격감을 줍니다.
+    const forwardX = Math.sin(state.heading);
+    const forwardZ = Math.cos(state.heading);
+    const sideImpact = forwardZ * normalX - forwardX * normalZ;
+    state.roll += THREE.MathUtils.clamp(sideImpact * impactSpeed * .012, -.18, .18);
+  }
+
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
@@ -823,9 +877,11 @@
       const dx = state.position.x - x;
       const dz = state.position.z - z;
       if (dx * dx + dz * dz < radius * radius && state.position.y < 3.2) {
-        state.position.x = previous.x;
-        state.position.z = previous.z;
-        state.velocity *= -.22;
+        if (state.collisionCooldown <= 0) applyCollisionBounce(dx, dz, previous);
+        else {
+          state.position.x = previous.x;
+          state.position.z = previous.z;
+        }
         return;
       }
     }
@@ -838,9 +894,11 @@
         dx * dx + dz * dz < contactDistance * contactDistance &&
         Math.abs(state.position.y - ai.root.position.y) < 2.2
       ) {
-        state.position.x = previous.x;
-        state.position.z = previous.z;
-        state.velocity *= -.18;
+        if (state.collisionCooldown <= 0) applyCollisionBounce(dx, dz, previous, ai.speed);
+        else {
+          state.position.x = previous.x;
+          state.position.z = previous.z;
+        }
         return;
       }
     }
@@ -881,6 +939,10 @@
     const previous = state.position.clone();
     state.position.x += Math.sin(state.heading) * state.velocity * dt;
     state.position.z += Math.cos(state.heading) * state.velocity * dt;
+    state.position.x += state.knockback.x * dt;
+    state.position.z += state.knockback.y * dt;
+    state.knockback.multiplyScalar(Math.exp(-4.8 * dt));
+    state.collisionCooldown = Math.max(0, state.collisionCooldown - dt);
     resolveCollisions(previous);
     distanceForCredits += Math.abs(state.velocity) * dt;
     if (distanceForCredits >= 150) {
@@ -1199,13 +1261,54 @@
   $("#spawn-button").addEventListener("click", () => placeVehicle(0, -12, 0, `${currentVehicle().name}을(를) 스폰했습니다.`));
 
   // 게임 시작 후 흐른 실제 접속 시간을 계산합니다. 결제나 외부 계정은 사용하지 않습니다.
-  let sessionStartedAt = null;
-  const claimedSessionRewards = new Set();
+  const restoredSessionSeconds = Math.max(0, Number(savedGame.sessionSeconds) || 0);
+  let sessionStartedAt = restoredSessionSeconds > 0 ? Date.now() - restoredSessionSeconds * 1000 : null;
+  const claimedSessionRewards = new Set(
+    Array.isArray(savedGame.claimedRewards)
+      ? savedGame.claimedRewards.filter(index => Number.isInteger(index) && SESSION_REWARDS[index])
+      : []
+  );
   let lastTimedUiSecond = -1;
 
   function getSessionSeconds() {
     if (!sessionStartedAt) return 0;
     return Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000));
+  }
+
+  function saveGame(notifyPlayer = false) {
+    try {
+      const quality = $("#quality-setting")?.value || "high";
+      const sensitivity = Number($("#sensitivity-setting")?.value) || 55;
+      const sound = !!$("#sound-setting")?.checked;
+      const payload = {
+        version: 1,
+        savedAt: Date.now(),
+        selectedVehicle: selectedIndex,
+        paint: selectedPaint,
+        accessories: [...equipped],
+        credits: Math.floor(credits),
+        position: {
+          x: Number(state.position.x.toFixed(2)),
+          z: Number(state.position.z.toFixed(2))
+        },
+        heading: Number(state.heading.toFixed(4)),
+        sessionSeconds: getSessionSeconds(),
+        claimedRewards: [...claimedSessionRewards],
+        settings: { quality, sensitivity, sound }
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      savedGame = payload;
+      const status = $("#save-status");
+      if (status) {
+        status.textContent = `마지막 저장 ${new Date(payload.savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+      }
+      if (notifyPlayer) showToast("게임 진행 상황을 저장했습니다.");
+      return true;
+    } catch (error) {
+      console.warn("게임을 저장하지 못했습니다.", error);
+      if (notifyPlayer) showToast("저장할 수 없습니다. 브라우저 저장 권한을 확인해 주세요.");
+      return false;
+    }
   }
 
   function applySessionReward(index) {
@@ -1222,6 +1325,7 @@
     }
     if (reward.credits) addCredits(reward.credits, "", false);
     saveCustomization();
+    saveGame(false);
     rebuildPlayerVehicle();
     rebuildPreview();
     renderAccessories();
@@ -1262,16 +1366,35 @@
     renderDestinations();
   }
 
-  function applyQuality(value) {
+  function applyQuality(value, notifyPlayer = true) {
     const ratio = value === "low" ? 1 : value === "medium" ? 1.35 : 1.65;
     renderer.setPixelRatio(Math.min(devicePixelRatio, ratio));
     renderer.shadowMap.enabled = value !== "low";
     sun.shadow.mapSize.set(value === "high" ? 2048 : 1024, value === "high" ? 2048 : 1024);
     sun.shadow.map?.dispose();
-    showToast(`그래픽 품질: ${value === "high" ? "높음" : value === "medium" ? "중간" : "낮음"}`);
+    if (notifyPlayer) showToast(`그래픽 품질: ${value === "high" ? "높음" : value === "medium" ? "중간" : "낮음"}`);
   }
-  $("#quality-setting").addEventListener("change", event => applyQuality(event.target.value));
-  $("#sensitivity-setting").addEventListener("input", event => { mouseSensitivity = Number(event.target.value) / 100; });
+  const savedSettings = savedGame.settings || {};
+  const qualitySetting = ["low", "medium", "high"].includes(savedSettings.quality) ? savedSettings.quality : "high";
+  const sensitivitySetting = THREE.MathUtils.clamp(Number(savedSettings.sensitivity) || 55, 20, 100);
+  $("#quality-setting").value = qualitySetting;
+  $("#sensitivity-setting").value = String(sensitivitySetting);
+  $("#sound-setting").checked = !!savedSettings.sound;
+  mouseSensitivity = sensitivitySetting / 100;
+  applyQuality(qualitySetting, false);
+  if (Number.isFinite(Number(savedGame.savedAt))) {
+    $("#save-status").textContent = `마지막 저장 ${new Date(savedGame.savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  $("#quality-setting").addEventListener("change", event => {
+    applyQuality(event.target.value);
+    saveGame(false);
+  });
+  $("#sensitivity-setting").addEventListener("input", event => {
+    mouseSensitivity = Number(event.target.value) / 100;
+    saveGame(false);
+  });
+  $("#manual-save-button").addEventListener("click", () => saveGame(true));
   $("#fullscreen-button").addEventListener("click", async () => {
     try {
       if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
@@ -1285,7 +1408,7 @@
   let audioContext = null;
   let engineOscillator = null;
   let engineGain = null;
-  let soundEnabled = false;
+  let soundEnabled = !!savedSettings.sound;
 
   function ensureAudio() {
     if (audioContext) return;
@@ -1301,6 +1424,7 @@
   $("#sound-setting").addEventListener("change", async event => {
     ensureAudio();
     soundEnabled = event.target.checked;
+    saveGame(false);
     if (audioContext.state === "suspended") await audioContext.resume();
   });
   function updateAudio() {
@@ -1357,9 +1481,13 @@
     started = true;
     paused = false;
     if (!sessionStartedAt) sessionStartedAt = Date.now();
+    if (soundEnabled) {
+      ensureAudio();
+      audioContext.resume();
+    }
     lastTimedUiSecond = -1;
     startScreen.classList.remove("visible");
-    showToast("시작 패드에서 V 키 또는 버튼으로 차량을 다시 소환할 수 있습니다.");
+    showToast(canRestorePosition ? "저장된 위치에서 게임을 이어갑니다." : "시작 패드에서 V 키 또는 버튼으로 차량을 다시 소환할 수 있습니다.");
     lastTime = performance.now();
   });
 
@@ -1375,6 +1503,7 @@
   let lastTime = performance.now();
   let fpsFrames = 0;
   let fpsElapsed = 0;
+  let autoSaveElapsed = 0;
 
   function updateUI(dt) {
     speedText.textContent = String(Math.round(Math.abs(state.velocity) * 3.6)).padStart(3, "0");
@@ -1403,6 +1532,13 @@
       updatePhysics(dt);
       updateMoneyPickups(dt);
     }
+    if (started) {
+      autoSaveElapsed += dt;
+      if (autoSaveElapsed >= 5) {
+        autoSaveElapsed = 0;
+        saveGame(false);
+      }
+    }
     updateCamera(dt);
     updateUI(dt);
     updateTimedMenus();
@@ -1423,8 +1559,12 @@
     resizePreview();
   }
   window.addEventListener("resize", onResize);
+  window.addEventListener("beforeunload", () => saveGame(false));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") saveGame(false);
+  });
 
-  placeVehicle(0, -12, 0);
+  placeVehicle(state.position.x, state.position.z, state.heading);
   updateCamera(1);
   loading.classList.remove("visible");
   requestAnimationFrame(animate);
