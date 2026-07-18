@@ -129,9 +129,14 @@
   // ────────────────────────────────────────────────────────────────────────
   // 렌더러 / 씬 / 조명
   // ────────────────────────────────────────────────────────────────────────
+  function qualityPixelRatio(value) {
+    const limit = value === "low" ? 1.2 : value === "medium" ? 1.45 : 1.8;
+    return Math.min(devicePixelRatio, limit);
+  }
+
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setSize(innerWidth, innerHeight, false);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65));
+  renderer.setPixelRatio(qualityPixelRatio("high"));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
@@ -1207,7 +1212,9 @@
 
   function updateCamera(dt) {
     const speedRatio = Math.min(Math.abs(state.velocity) / currentVehicle().maxSpeed, 1);
-    const distance = 10.8 + speedRatio * 3.3;
+    const compactScreen = innerWidth < 650 || innerHeight < 540;
+    const sideViewAmount = Math.abs(Math.sin(cameraYaw));
+    const distance = (compactScreen ? 13.2 : 10.8) + speedRatio * 3.3 + sideViewAmount * 1.6;
     const angle = state.heading + cameraYaw;
     desiredCamera.set(
       state.position.x - Math.sin(angle) * distance,
@@ -1215,14 +1222,16 @@
       state.position.z - Math.cos(angle) * distance
     );
     camera.position.lerp(desiredCamera, 1 - Math.exp(-4.4 * dt));
+    // 옆을 바라볼 때 전방 주시점을 줄여 차량이 화면 밖으로 밀리거나 잘리지 않게 합니다.
+    const lookAhead = 4 * (1 - sideViewAmount * .92);
     cameraTarget.set(
-      state.position.x + Math.sin(state.heading) * 4,
+      state.position.x + Math.sin(state.heading) * lookAhead,
       state.position.y + 1.25,
-      state.position.z + Math.cos(state.heading) * 4
+      state.position.z + Math.cos(state.heading) * lookAhead
     );
     smoothedTarget.lerp(cameraTarget, 1 - Math.exp(-7 * dt));
     camera.lookAt(smoothedTarget);
-    camera.fov = THREE.MathUtils.lerp(camera.fov, 59 + speedRatio * 7, 1 - Math.exp(-3 * dt));
+    camera.fov = THREE.MathUtils.lerp(camera.fov, (compactScreen ? 64 : 59) + speedRatio * 7, 1 - Math.exp(-3 * dt));
     camera.updateProjectionMatrix();
     cameraYaw *= Math.exp(-.18 * dt);
 
@@ -1515,10 +1524,10 @@
   }
 
   function applyQuality(value, notifyPlayer = true) {
-    const ratio = value === "low" ? 1 : value === "medium" ? 1.35 : 1.65;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, ratio));
-    renderer.shadowMap.enabled = value !== "low";
-    sun.shadow.mapSize.set(value === "high" ? 2048 : 1024, value === "high" ? 2048 : 1024);
+    renderer.setPixelRatio(qualityPixelRatio(value));
+    renderer.shadowMap.enabled = true;
+    const shadowSize = value === "low" ? 512 : value === "medium" ? 1024 : 2048;
+    sun.shadow.mapSize.set(shadowSize, shadowSize);
     sun.shadow.map?.dispose();
     if (notifyPlayer) showToast(`그래픽 품질: ${value === "high" ? "높음" : value === "medium" ? "중간" : "낮음"}`);
   }
@@ -1708,7 +1717,7 @@
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight, false);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, $("#quality-setting").value === "high" ? 1.65 : 1.3));
+    renderer.setPixelRatio(qualityPixelRatio($("#quality-setting").value));
     resizePreview();
   }
   window.addEventListener("resize", onResize);
