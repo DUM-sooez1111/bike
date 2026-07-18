@@ -373,11 +373,14 @@
       const pivot = new THREE.Group();
       pivot.position.set(x, y, z);
       body.add(pivot);
-      const tire = makeMesh(new THREE.CylinderGeometry(radius, radius, width, 12), MAT.tire, 0, 0, 0, pivot);
+      // 조향 피벗과 회전축을 분리해 바퀴가 기울어지지 않고 X축으로 정확히 굴러갑니다.
+      const spinGroup = new THREE.Group();
+      pivot.add(spinGroup);
+      const tire = makeMesh(new THREE.CylinderGeometry(radius, radius, width, 12), MAT.tire, 0, 0, 0, spinGroup);
       tire.rotation.z = Math.PI / 2;
-      const rim = makeMesh(new THREE.CylinderGeometry(radius * .48, radius * .48, width + .03, 8), MAT.rim, 0, 0, 0, pivot);
+      const rim = makeMesh(new THREE.CylinderGeometry(radius * .48, radius * .48, width + .03, 8), MAT.rim, 0, 0, 0, spinGroup);
       rim.rotation.z = Math.PI / 2;
-      wheels.push(tire, rim);
+      wheels.push(spinGroup);
       if (front) frontPivots.push(pivot);
     }
 
@@ -582,7 +585,8 @@
     const throttle = keys.w ? 1 : 0;
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
-    const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
+    // +Y 회전은 오른쪽이므로 D는 양수, A는 음수로 매핑합니다.
+    const steer = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
 
     if (throttle) state.velocity += (state.velocity < -.5 ? spec.braking * .62 : spec.acceleration) * dt;
     if (reverse) state.velocity -= (state.velocity > .5 ? spec.braking * .62 : PHYSICS.reverseAcceleration) * dt;
@@ -656,7 +660,7 @@
 
     state.wheelSpin += state.velocity * dt / .62;
     vehicleVisual.wheels.forEach(wheel => { wheel.rotation.x = state.wheelSpin; });
-    state.steerVisual = THREE.MathUtils.lerp(state.steerVisual, -steer * .38, 1 - Math.exp(-12 * dt));
+    state.steerVisual = THREE.MathUtils.lerp(state.steerVisual, steer * .38, 1 - Math.exp(-12 * dt));
     vehicleVisual.frontPivots.forEach(pivot => { pivot.rotation.y = state.steerVisual; });
 
     vehicle.position.copy(state.position);
