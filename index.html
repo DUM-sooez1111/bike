@@ -2,90 +2,182 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#78bde7" />
-    <title>POLY DRIVE — 3D 자동차 게임</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#11151d" />
+    <title>Neon Trails — 3D 오픈월드 드라이빙</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <main id="game" aria-label="3D 자동차 게임">
+    <main id="game" aria-label="3D 오픈월드 자동차와 바이크 게임">
       <canvas id="game-canvas"></canvas>
 
-      <section id="hud" aria-live="polite">
-        <div class="brand">
-          <span class="brand-mark"></span>
-          <span>POLY DRIVE</span>
+      <header id="hud">
+        <div class="speed-block">
+          <span class="hud-label">CURRENT SPEED</span>
+          <div><strong id="speed">000</strong><span>KM/H</span></div>
         </div>
-        <div class="speed-row">
-          <strong id="speed">000</strong>
-          <span>KM/H</span>
-        </div>
-        <div class="hud-meta">
-          <span>FPS <b id="fps">60</b></span>
-          <span class="divider"></span>
-          <span id="jump-status"><i></i> JUMP READY</span>
-        </div>
+        <div class="hud-chip"><span>FPS</span><b id="fps">60</b></div>
+        <div id="jump-status" class="hud-chip ready"><i></i><b>점프 가능</b></div>
+      </header>
+
+      <nav id="side-menu" aria-label="게임 메뉴">
+        <button class="menu-button garage active" data-panel="garage" type="button">
+          <span class="menu-icon">🚗</span><small>차고</small>
+        </button>
+        <button class="menu-button accessories" data-panel="accessories" type="button">
+          <span class="menu-icon">🎒</span><small>장신구</small>
+        </button>
+        <button class="menu-button teleport" data-panel="teleport" type="button">
+          <span class="menu-icon">🌀</span><small>순간이동</small>
+        </button>
+        <button class="menu-button gifts" data-panel="gifts" type="button">
+          <span class="menu-icon">🎁</span><small>선물</small>
+        </button>
+        <button class="menu-button settings" data-panel="settings" type="button">
+          <span class="menu-icon">⚙️</span><small>설정</small>
+        </button>
+      </nav>
+
+      <section id="interaction-prompt" aria-live="polite">
+        <span class="prompt-key">V</span>
+        <div><b>스폰 패드</b><small>선택한 차량 다시 소환</small></div>
+        <button id="spawn-button" type="button">차량 소환</button>
       </section>
 
-      <section id="controls" aria-label="조작법">
-        <div class="key-group">
-          <span class="key">W</span>
-          <span class="key">A</span>
-          <span class="key">S</span>
-          <span class="key">D</span>
-          <small>DRIVE</small>
-        </div>
-        <div class="key-group">
-          <span class="key wide">SHIFT</span>
-          <small>BRAKE</small>
-        </div>
-        <div class="key-group">
-          <span class="key wide">SPACE</span>
-          <small>JUMP</small>
-        </div>
-        <div class="key-group desktop-only">
-          <span class="key">R</span>
-          <small>RESET</small>
-        </div>
+      <section id="control-guide">
+        <span><kbd>WASD</kbd> 주행</span>
+        <span><kbd>SHIFT</kbd> 브레이크</span>
+        <span><kbd>SPACE</kbd> 점프</span>
+        <span><kbd>R</kbd> 복구</span>
+        <span><kbd>ESC</kbd> 일시정지</span>
       </section>
 
-      <button id="sound-toggle" type="button" aria-label="엔진 소리 켜기" title="엔진 소리">
-        <span class="sound-icon">♪</span>
-      </button>
+      <div id="mobile-controls" aria-label="터치 조작">
+        <div class="touch-steer">
+          <button data-key="a" type="button">◀</button>
+          <button data-key="d" type="button">▶</button>
+        </div>
+        <div class="touch-drive">
+          <button data-key="w" type="button">▲</button>
+          <button data-key="s" type="button">▼</button>
+          <button data-key=" " type="button">JUMP</button>
+        </div>
+      </div>
+
+      <section id="drawer" aria-modal="true" aria-label="게임 메뉴">
+        <div class="drawer-backdrop"></div>
+        <div class="drawer-shell">
+          <button id="drawer-close" class="icon-button" type="button" aria-label="메뉴 닫기">×</button>
+
+          <article class="drawer-panel active" data-panel-content="garage">
+            <div class="panel-heading">
+              <span class="eyebrow">DEALER / 내 차고</span>
+              <h2>오늘은 무엇을 탈까요?</h2>
+              <p>차량마다 주행 감각과 능력치가 다릅니다.</p>
+            </div>
+            <div class="garage-layout">
+              <div id="vehicle-list" class="vehicle-list" role="listbox" aria-label="차량 목록"></div>
+              <div class="vehicle-preview">
+                <div class="preview-stage">
+                  <canvas id="preview-canvas"></canvas>
+                  <span id="vehicle-class" class="class-tag">RALLY</span>
+                </div>
+                <div class="vehicle-detail">
+                  <div><span id="vehicle-number">01</span><h3 id="vehicle-name">Trail Fox</h3></div>
+                  <p id="vehicle-description"></p>
+                  <div id="vehicle-stats" class="stats"></div>
+                  <button id="select-vehicle" class="primary-button" type="button">이 차량 선택 <span>→</span></button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="drawer-panel" data-panel-content="accessories">
+            <div class="panel-heading">
+              <span class="eyebrow">FREE CUSTOMIZE</span>
+              <h2>장신구</h2>
+              <p>모든 꾸미기 아이템은 무료입니다. 원하는 만큼 자유롭게 장착하세요.</p>
+            </div>
+            <div class="customize-layout">
+              <section class="custom-card">
+                <h3>차량 컬러</h3>
+                <div id="color-options" class="color-options"></div>
+              </section>
+              <section class="custom-card">
+                <h3>장착 아이템</h3>
+                <div id="accessory-options" class="accessory-grid"></div>
+              </section>
+            </div>
+          </article>
+
+          <article class="drawer-panel" data-panel-content="teleport">
+            <div class="panel-heading">
+              <span class="eyebrow">FAST TRAVEL</span>
+              <h2>순간이동</h2>
+              <p>목적지를 선택하면 차량과 함께 즉시 이동합니다.</p>
+            </div>
+            <div id="teleport-list" class="destination-grid"></div>
+          </article>
+
+          <article class="drawer-panel" data-panel-content="gifts">
+            <div class="panel-heading">
+              <span class="eyebrow">NO PURCHASES</span>
+              <h2>오늘의 선물</h2>
+              <p>결제 없이 매일 한 번 무료 컬러를 해금할 수 있습니다.</p>
+            </div>
+            <div class="gift-card">
+              <span class="gift-emoji">🎁</span>
+              <div><span>DAILY DROP</span><h3 id="gift-title">선셋 오렌지 컬러</h3><p id="gift-copy">오늘의 무료 보상을 받아보세요.</p></div>
+              <button id="claim-gift" class="primary-button" type="button">무료로 받기</button>
+            </div>
+          </article>
+
+          <article class="drawer-panel" data-panel-content="settings">
+            <div class="panel-heading">
+              <span class="eyebrow">PREFERENCES</span>
+              <h2>설정</h2>
+              <p>기기에 맞게 화면과 조작을 조정하세요.</p>
+            </div>
+            <div class="settings-grid">
+              <label class="setting-row"><span><b>그래픽 품질</b><small>그림자와 렌더링 해상도</small></span>
+                <select id="quality-setting"><option value="low">낮음</option><option value="medium">중간</option><option value="high" selected>높음</option></select>
+              </label>
+              <label class="setting-row"><span><b>사운드</b><small>합성 엔진 사운드</small></span><input id="sound-setting" type="checkbox" /></label>
+              <label class="setting-row range-row"><span><b>마우스 감도</b><small>카메라 시점 회전 속도</small></span><input id="sensitivity-setting" type="range" min="20" max="100" value="55" /></label>
+              <label class="setting-row"><span><b>화면 옵션</b><small>전체 화면으로 몰입하기</small></span><button id="fullscreen-button" class="secondary-button" type="button">전체 화면</button></label>
+            </div>
+          </article>
+        </div>
+      </section>
 
       <section id="start-screen" class="overlay visible">
-        <div class="panel">
-          <p class="eyebrow">LOW POLY / OPEN WORLD</p>
-          <h1>POLY<br /><em>DRIVE</em></h1>
-          <p class="intro">잔디 위를 질주하고, 언덕을 넘어<br />가장 멋진 점프를 만들어 보세요.</p>
-          <button id="start-button" type="button">
-            <span>START ENGINE</span>
-            <b>→</b>
-          </button>
-          <p class="hint">키보드로 조작 · ESC 일시정지</p>
+        <div class="start-card">
+          <div class="logo-lockup"><i></i><span>NEON</span><b>TRAILS</b></div>
+          <span class="eyebrow">LOW POLY OPEN WORLD</span>
+          <h1>도로가 끝나면<br /><em>모험이 시작된다.</em></h1>
+          <p>넓은 초원을 달리고, 점프대를 날아오르고,<br />자동차와 바이크를 마음껏 바꿔 타세요.</p>
+          <button id="start-button" class="primary-button" type="button">엔진 시동 <span>→</span></button>
+          <small>키보드 또는 화면 버튼으로 플레이</small>
         </div>
+        <div class="start-badge"><span>5</span><small>VEHICLES<br />READY</small></div>
       </section>
 
       <section id="pause-screen" class="overlay">
-        <div class="panel pause-panel">
-          <p class="eyebrow">ENGINE IDLE</p>
-          <h2>PAUSED</h2>
-          <button id="resume-button" type="button">
-            <span>계속 달리기</span>
-            <b>→</b>
-          </button>
-          <p class="hint">ESC 키로 돌아가기</p>
+        <div class="pause-card">
+          <span class="eyebrow">ENGINE IDLE</span>
+          <h2>일시정지</h2>
+          <p>잠시 쉬어가도 괜찮아요.</p>
+          <button id="resume-button" class="primary-button" type="button">계속 달리기 <span>→</span></button>
+          <button id="pause-garage" class="secondary-button" type="button">차고 열기</button>
         </div>
       </section>
 
-      <div id="loading" class="visible">
-        <span></span>
-        <p>세상을 만드는 중…</p>
-      </div>
+      <div id="toast" role="status" aria-live="polite"></div>
+      <div id="loading" class="visible"><i></i><span>OPEN WORLD LOADING</span></div>
       <div id="error-message" role="alert"></div>
     </main>
 
-    <!-- 라이브러리를 프로젝트에 포함해 인터넷 없이도 바로 실행됩니다. -->
+    <!-- Three.js를 프로젝트에 포함해 index.html을 직접 열어도 오프라인으로 실행됩니다. -->
     <script src="vendor/three.min.js"></script>
     <script src="main.js"></script>
   </body>
