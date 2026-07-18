@@ -43,6 +43,9 @@ button { color: inherit; }
   font-size: 10px; letter-spacing: .06em;
 }
 .hud-chip > span { color: var(--muted); }
+.money-chip b { color: var(--yellow); }
+.money-chip.bump { animation: moneyBump .35s ease; }
+@keyframes moneyBump { 50% { transform: scale(1.08); border-color: var(--yellow); } }
 .hud-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
 .hud-chip.locked i { background: var(--yellow); box-shadow: none; }
 

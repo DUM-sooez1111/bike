@@ -74,13 +74,13 @@
 
   // 참고 이미지의 시간을 분 단위로 올림한 3·8·13·18·28·43·58분 보상입니다.
   const SESSION_REWARDS = [
-    { minute: 3, icon: "🍎", name: "루비 레드 컬러", copy: "강렬한 레드 페인트", paint: 0xf05a35 },
-    { minute: 8, icon: "🎨", name: "민트 러시 컬러", copy: "산뜻한 민트 페인트", paint: 0x52d39a },
-    { minute: 13, icon: "🦴", name: "탐험 안테나", copy: "무료 장신구 자동 장착", accessory: "antenna" },
-    { minute: 18, icon: "🍔", name: "트레일 깃발", copy: "무료 장신구 자동 장착", accessory: "flag" },
-    { minute: 28, icon: "✨", name: "루프 라이트", copy: "무료 장신구 자동 장착", accessory: "lights" },
-    { minute: 43, icon: "🎆", name: "스포츠 스포일러", copy: "무료 장신구 자동 장착", accessory: "spoiler" },
-    { minute: 58, icon: "🧊", name: "풀 커스텀 팩", copy: "모든 장신구와 스노 화이트 컬러", all: true, featured: true }
+    { minute: 3, icon: "🍎", name: "루비 레드 컬러", copy: "레드 페인트 + 100 크레딧", paint: 0xf05a35, credits: 100 },
+    { minute: 8, icon: "🎨", name: "민트 러시 컬러", copy: "민트 페인트 + 250 크레딧", paint: 0x52d39a, credits: 250 },
+    { minute: 13, icon: "🦴", name: "탐험 안테나", copy: "무료 장신구 + 400 크레딧", accessory: "antenna", credits: 400 },
+    { minute: 18, icon: "🍔", name: "트레일 깃발", copy: "무료 장신구 + 600 크레딧", accessory: "flag", credits: 600 },
+    { minute: 28, icon: "✨", name: "루프 라이트", copy: "무료 장신구 + 1,000 크레딧", accessory: "lights", credits: 1000 },
+    { minute: 43, icon: "🎆", name: "스포츠 스포일러", copy: "무료 장신구 + 2,000 크레딧", accessory: "spoiler", credits: 2000 },
+    { minute: 58, icon: "🧊", name: "풀 커스텀 팩", copy: "모든 장신구 + 5,000 크레딧", all: true, featured: true, credits: 5000 }
   ];
 
   const $ = (selector) => document.querySelector(selector);
@@ -90,8 +90,26 @@
   const speedText = $("#speed");
   const fpsText = $("#fps");
   const jumpStatus = $("#jump-status");
+  const moneyText = $("#money");
   const WORLD_HALF_SIZE = 245;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
+  let credits = 0;
+  try { credits = Math.max(0, Number(localStorage.getItem("neon-trails-credits")) || 0); } catch (_) { /* 저장 제한 환경에서는 현재 실행 중에만 유지 */ }
+
+  function updateMoneyDisplay() {
+    moneyText.textContent = new Intl.NumberFormat("ko-KR").format(Math.floor(credits));
+  }
+
+  function addCredits(amount, reason = "", notifyPlayer = true) {
+    credits = Math.max(0, credits + Math.floor(amount));
+    updateMoneyDisplay();
+    try { localStorage.setItem("neon-trails-credits", String(credits)); } catch (_) { /* file:// 저장 제한 허용 */ }
+    const chip = $(".money-chip");
+    chip.classList.remove("bump");
+    requestAnimationFrame(() => chip.classList.add("bump"));
+    if (notifyPlayer) showToast(`+${amount.toLocaleString("ko-KR")} 크레딧${reason ? ` · ${reason}` : ""}`);
+  }
+  updateMoneyDisplay();
 
   // ────────────────────────────────────────────────────────────────────────
   // 렌더러 / 씬 / 조명
@@ -374,6 +392,57 @@
   spawnPad.position.set(0, 0, -12);
   world.add(spawnPad);
 
+  // 맵 곳곳의 무료 크레딧 코인. 획득한 코인은 잠시 후 같은 위치에 다시 나타납니다.
+  const coinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffc928,
+    emissive: 0x8c4c00,
+    emissiveIntensity: .55,
+    roughness: .48,
+    metalness: .28,
+    flatShading: true
+  });
+  const moneyPickups = [];
+  const MONEY_PICKUP_POSITIONS = [
+    [0,-3],[11,18],[-18,34],[-48,-42],[54,58],[-37,91],
+    [116,5],[68,36],[20,5],[68,-26],[101,25],[36,-15],
+    [-116,-82],[-168,22],[-124,142],[-22,190],[112,166],[184,65],
+    [168,-118],[48,-182],[-88,-174],[144,112],[-182,-126],[8,152]
+  ];
+
+  MONEY_PICKUP_POSITIONS.forEach(([x, z]) => {
+    const group = new THREE.Group();
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(.58, .58, .18, 10), coinMaterial);
+    coin.rotation.x = Math.PI / 2;
+    coin.castShadow = false;
+    group.add(coin);
+    group.position.set(x, 1.45, z);
+    world.add(group);
+    moneyPickups.push({ group, baseY: 1.45, active: true, respawnAt: 0 });
+  });
+
+  function updateMoneyPickups(dt) {
+    const now = performance.now();
+    moneyPickups.forEach((pickup, index) => {
+      if (!pickup.active) {
+        if (now >= pickup.respawnAt) {
+          pickup.active = true;
+          pickup.group.visible = true;
+        }
+        return;
+      }
+      pickup.group.rotation.y += dt * 2.2;
+      pickup.group.position.y = pickup.baseY + Math.sin(now * .003 + index) * .18;
+      const dx = state.position.x - pickup.group.position.x;
+      const dz = state.position.z - pickup.group.position.z;
+      if (dx * dx + dz * dz < 5.2 && Math.abs(state.position.y - pickup.group.position.y) < 3) {
+        pickup.active = false;
+        pickup.group.visible = false;
+        pickup.respawnAt = now + 25000;
+        addCredits(50, "맵 코인 획득");
+      }
+    });
+  }
+
   // ────────────────────────────────────────────────────────────────────────
   // 절차적 차량 모델. 외부 3D 파일 없이 차종별 실루엣을 만듭니다.
   // ────────────────────────────────────────────────────────────────────────
@@ -644,6 +713,7 @@
   let paused = false;
   let uiOpen = false;
   let jumpQueued = false;
+  let distanceForCredits = 0;
 
   function currentVehicle() { return VEHICLES[selectedIndex]; }
   function clearKeys() { Object.keys(keys).forEach(key => { keys[key] = false; }); }
@@ -748,6 +818,11 @@
     state.position.x += Math.sin(state.heading) * state.velocity * dt;
     state.position.z += Math.cos(state.heading) * state.velocity * dt;
     resolveCollisions(previous);
+    distanceForCredits += Math.abs(state.velocity) * dt;
+    if (distanceForCredits >= 150) {
+      distanceForCredits -= 150;
+      addCredits(25, "주행 거리 보상");
+    }
 
     const previousSurface = getSurfaceInfo(previous);
     let surface = getSurfaceInfo(state.position);
@@ -1069,6 +1144,7 @@
       ACCESSORIES.forEach(item => equipped.add(item.id));
       selectedPaint = 0xeceff2;
     }
+    if (reward.credits) addCredits(reward.credits, "", false);
     rebuildPlayerVehicle();
     rebuildPreview();
     renderAccessories();
@@ -1248,6 +1324,7 @@
     if (started && !paused && !uiOpen) {
       updateAIVehicles(dt);
       updatePhysics(dt);
+      updateMoneyPickups(dt);
     }
     updateCamera(dt);
     updateUI(dt);
