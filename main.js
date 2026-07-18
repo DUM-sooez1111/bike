@@ -851,8 +851,8 @@
     const throttle = keys.w ? 1 : 0;
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
-    // +Y 회전은 오른쪽이므로 D는 양수, A는 음수로 매핑합니다.
-    const steer = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+    // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
+    const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
 
     if (throttle) state.velocity += (state.velocity < -.5 ? spec.braking * .62 : spec.acceleration) * dt;
     if (reverse) state.velocity -= (state.velocity > .5 ? spec.braking * .62 : PHYSICS.reverseAcceleration) * dt;
