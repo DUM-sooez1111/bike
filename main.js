@@ -277,7 +277,8 @@
   scene.background = new THREE.Color(0x91cbed);
   scene.fog = new THREE.Fog(0x9bcde3, 240, 980);
 
-  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 1200);
+  // 확장된 맵의 산과 하늘이 원거리 절단면에 잘리지 않도록 충분한 시야 거리를 둡니다.
+  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 2200);
   camera.position.set(0, 7, -14);
 
   const flatMaterial = (color, roughness = 0.86, metalness = 0.02) =>
@@ -319,19 +320,25 @@
 
   // 이미지 파일이 없어도 자연스러운 그라데이션 하늘이 보이는 스카이 돔입니다.
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(1800, 24, 12),
+    // 카메라보다 작은 원거리 절단면 안에 항상 들어오는 크기로 유지합니다.
+    new THREE.SphereGeometry(1000, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
       uniforms: {
         topColor: { value: new THREE.Color(0x4eaae0) },
         bottomColor: { value: new THREE.Color(0xeef3d5) },
         offset: { value: 18 },
         exponent: { value: .72 }
       },
-      vertexShader: "varying vec3 vPos; void main(){vec4 w=modelMatrix*vec4(position,1.0);vPos=w.xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}",
+      // 하늘이 카메라를 따라 이동해도 그라데이션이 흔들리지 않도록 로컬 좌표를 사용합니다.
+      vertexShader: "varying vec3 vPos; void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}",
       fragmentShader: "uniform vec3 topColor;uniform vec3 bottomColor;uniform float offset;uniform float exponent;varying vec3 vPos;void main(){float h=normalize(vPos+vec3(0.,offset,0.)).y;gl_FragColor=vec4(mix(bottomColor,topColor,pow(max(h,0.),exponent)),1.);}"
     })
   );
+  sky.frustumCulled = false;
+  sky.renderOrder = -1000;
   scene.add(sky);
 
   // ────────────────────────────────────────────────────────────────────────
@@ -2304,6 +2311,8 @@
       state.position.z - Math.cos(angle) * distance
     );
     camera.position.lerp(desiredCamera, 1 - Math.exp(-4.4 * dt));
+    // 맵 가장자리에서도 스카이 돔의 면이나 경계가 화면에 드러나지 않게 합니다.
+    sky.position.copy(camera.position);
     // 옆을 바라볼 때 전방 주시점을 줄여 차량이 화면 밖으로 밀리거나 잘리지 않게 합니다.
     const lookAhead = 4 * (1 - sideViewAmount * .92);
     cameraTarget.set(
