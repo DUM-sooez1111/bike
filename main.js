@@ -316,6 +316,7 @@
   const ramps = [];
   const terrainSurfaces = [];
   const waterZones = [];
+  const roadSegments = [];
   const WATER_LEVEL = .78;
 
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30), MAT.grass);
@@ -381,7 +382,48 @@
     const onSouthRoad = z > -304 && z < -132 && Math.abs(x - 68) < 7 + clearance;
     const onBridge = x > 72 - clearance && x < 98 + clearance && z > 164 && z < 246;
     const atSpawn = Math.hypot(x, z + 12) < 11 + clearance;
-    return onTrack || onWestRoad || onSouthRoad || onBridge || atSpawn;
+    const onAddedRoad = roadSegments.some(segment => {
+      const segmentX = segment.bx - segment.ax;
+      const segmentZ = segment.bz - segment.az;
+      const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+      const projection = lengthSquared > .001
+        ? ((x - segment.ax) * segmentX + (z - segment.az) * segmentZ) / lengthSquared
+        : 0;
+      const t = THREE.MathUtils.clamp(projection, 0, 1);
+      const closestX = segment.ax + segmentX * t;
+      const closestZ = segment.az + segmentZ * t;
+      return Math.hypot(x - closestX, z - closestZ) < segment.width / 2 + clearance;
+    });
+    return onTrack || onWestRoad || onSouthRoad || onBridge || atSpawn || onAddedRoad;
+  }
+
+  // 여러 지점을 잇는 도로를 만들고 나무·돌 생성 제외 구역에도 등록합니다.
+  function addRoadPath(points, width = 10, material = MAT.road) {
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const [ax, az] = points[index];
+      const [bx, bz] = points[index + 1];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const length = Math.hypot(dx, dz);
+      const rotationY = Math.atan2(dx, dz);
+      addBox((ax + bx) / 2, .032, (az + bz) / 2, width, .064, length + .8, material, rotationY, false);
+      const dashCount = Math.max(1, Math.floor(length / 11));
+      for (let dash = 0; dash < dashCount; dash += 1) {
+        const t = (dash + .5) / dashCount;
+        addBox(
+          THREE.MathUtils.lerp(ax, bx, t),
+          .072,
+          THREE.MathUtils.lerp(az, bz, t),
+          .18,
+          .025,
+          Math.min(4.2, length / dashCount * .48),
+          MAT.roadEdge,
+          rotationY,
+          false
+        );
+      }
+      roadSegments.push({ ax, az, bx, bz, width });
+    }
   }
 
   // 물리 계산과 정확히 같은 방향을 가진 쐐기형 점프대
@@ -415,6 +457,15 @@
   addRamp(82, -45, Math.PI / 2, 7, 12, 3.3);
   addRamp(-286, 42, Math.PI / 2, 13, 24, 7.2);
   addRamp(68, -276, 0, 10, 19, 5.5);
+
+  // 시작점에서 트랙, 다리, 호수, 산과 외곽 지역까지 이어지는 도로망입니다.
+  addRoadPath([[0,-12],[18,-6],[35,3]], 11);
+  addRoadPath([[68,34],[72,72],[78,112],[83,150],[85,166]], 10);
+  addRoadPath([[23,8],[-20,18],[-72,32],[-132,42],[-210,42],[-295,42]], 10);
+  addRoadPath([[68,-26],[68,-82],[68,-145],[68,-215],[68,-295]], 10);
+  addRoadPath([[-218,42],[-225,-10],[-235,-62],[-244,-108],[-239,-142]], 9);
+  addRoadPath([[108,-15],[150,-30],[190,-48],[218,-65]], 9);
+  addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258]], 10);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
