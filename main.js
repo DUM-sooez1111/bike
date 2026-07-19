@@ -1820,7 +1820,31 @@
         surface.gradientZ * Math.cos(heading);
       return -Math.atan(forwardSlope);
     }
+    const slopeSurface = surface.ramp || (surface.terrain?.type === "slope" ? surface.terrain : null);
+    if (slopeSurface) {
+      const directionalSlope =
+        slopeSurface.height / slopeSurface.length *
+        Math.cos(heading - slopeSurface.rotationY);
+      return -Math.atan(directionalSlope);
+    }
     return surface.pitch;
+  }
+
+  function surfaceSlopeForHeading(surface, heading) {
+    if (Number.isFinite(surface.gradientX) && Number.isFinite(surface.gradientZ)) {
+      return (
+        surface.gradientX * Math.sin(heading) +
+        surface.gradientZ * Math.cos(heading)
+      );
+    }
+    const slopeSurface = surface.ramp || (surface.terrain?.type === "slope" ? surface.terrain : null);
+    if (slopeSurface) {
+      return (
+        slopeSurface.height / slopeSurface.length *
+        Math.cos(heading - slopeSurface.rotationY)
+      );
+    }
+    return 0;
   }
 
   function getRampForwardSpeed(ramp) {
@@ -1955,7 +1979,11 @@
     const waterPropulsion = inWaterBeforeMove ? .38 : 1;
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
-    const onRampBeforeMove = !!getSurfaceInfo(state.position).ramp;
+    const surfaceBeforeMove = getSurfaceInfo(state.position);
+    const onRampBeforeMove = !!surfaceBeforeMove.ramp;
+    const forwardSlope = state.grounded
+      ? surfaceSlopeForHeading(surfaceBeforeMove, state.travelHeading)
+      : 0;
     const canDrift = state.grounded && !onRampBeforeMove && !inWaterBeforeMove && Math.abs(state.velocity) > 6;
     const driftTarget = keys[" "] && canDrift ? 1 : 0;
     state.drift = THREE.MathUtils.lerp(state.drift, driftTarget, 1 - Math.exp(-(driftTarget ? 8 : 11) * dt));
@@ -1967,6 +1995,11 @@
       const before = state.velocity;
       state.velocity -= Math.sign(state.velocity) * spec.braking * dt;
       if (Math.sign(before) !== Math.sign(state.velocity)) state.velocity = 0;
+    }
+
+    // 경사 방향의 중력: 오르막은 감속하고 내리막은 자연스럽게 가속합니다.
+    if (state.grounded && Math.abs(forwardSlope) > .002) {
+      state.velocity -= forwardSlope * PHYSICS.gravity * .82 * dt;
     }
 
     const boostRequested =
@@ -1990,7 +2023,7 @@
       const drag = PHYSICS.rollingDrag + state.velocity * state.velocity * PHYSICS.airDrag;
       state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), drag * dt);
     }
-    if (!state.boosting && state.velocity > spec.maxSpeed) {
+    if (!state.boosting && state.velocity > spec.maxSpeed && forwardSlope >= -.025) {
       const overspeed = state.velocity - spec.maxSpeed;
       state.velocity -= Math.min(overspeed, (spec.acceleration + 10) * dt);
     }
