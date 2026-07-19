@@ -182,7 +182,7 @@
     { name: "북쪽 대평원", copy: "확장된 맵의 북쪽 끝을 달리는 넓은 초원", icon: "🧭", x: 80, z: 575, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 황야", copy: "긴 도로와 거대한 언덕이 이어지는 외곽 지역", icon: "🏜️", x: 585, z: -265, heading: -Math.PI / 2, unlockMinutes: 0 },
     { name: "서쪽 끝자락", copy: "초장거리 직선 도로의 서쪽 종점", icon: "🌄", x: -620, z: 42, heading: Math.PI / 2, unlockMinutes: 0 },
-    { name: "거대 설산", copy: "아주 높고 가파른 산을 정상까지 오르는 극한 코스", icon: "🏔️", x: -540, z: -405, heading: Math.PI, unlockMinutes: 0 }
+    { name: "거대 설산", copy: "산악도로를 따라 초대형 설산 정상까지 오르는 코스", icon: "🏔️", x: -540, z: -345, heading: Math.PI, unlockMinutes: 0 }
   );
 
   const PAINTS = [
@@ -349,6 +349,7 @@
   const colliders = [];
   const ramps = [];
   const terrainSurfaces = [];
+  const mountainRoadSurfaces = [];
   const waterZones = [];
   const roadSegments = [];
   const WATER_LEVEL = .18;
@@ -539,7 +540,7 @@
   addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258],[-175,315],[-285,330],[-405,375],[-575,430]], 10);
   addRoadPath([[105,245],[185,275],[275,315],[380,360],[545,430]], 10);
   addRoadPath([[42,252],[35,340],[52,430],[75,515],[80,620]], 10);
-  addRoadPath([[-565,-315],[-565,-355],[-555,-385],[-540,-405]], 11, MAT.dirt);
+  addRoadPath([[-565,-315],[-565,-340],[-555,-358],[-540,-372]], 12, MAT.dirt);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 15, MAT.dirt, 0, false);
@@ -612,6 +613,71 @@
     terrainSurfaces.push({ type: "hill", x, z, radius, height });
   }
 
+  function addMountainRoad(mountainTerrain, points, width = 16) {
+    const controls = points.map(([x, z]) => new THREE.Vector3(x, 0, z));
+    const curve = new THREE.CatmullRomCurve3(controls, false, "centripetal", .5);
+    const samples = curve.getPoints(120);
+    const positions = [];
+    const indices = [];
+    const roadSegments = [];
+    const heightAt = (x, z) => {
+      const distance = Math.hypot(x - mountainTerrain.x, z - mountainTerrain.z);
+      return mountainTerrain.height * THREE.MathUtils.clamp(1 - distance / mountainTerrain.radius, 0, 1);
+    };
+
+    // 급한 헤어핀에서 도로 좌우가 뒤집혀 거대한 삼각형이 생기지 않도록 구간별 사각형으로 만듭니다.
+    for (let index = 1; index < samples.length; index += 1) {
+      const previous = samples[index - 1];
+      const point = samples[index];
+      const tangentX = point.x - previous.x;
+      const tangentZ = point.z - previous.z;
+      const tangentLength = Math.max(Math.hypot(tangentX, tangentZ), .001);
+      const sideX = tangentZ / tangentLength;
+      const sideZ = -tangentX / tangentLength;
+      const previousLeftX = previous.x + sideX * width / 2;
+      const previousLeftZ = previous.z + sideZ * width / 2;
+      const previousRightX = previous.x - sideX * width / 2;
+      const previousRightZ = previous.z - sideZ * width / 2;
+      const currentLeftX = point.x + sideX * width / 2;
+      const currentLeftZ = point.z + sideZ * width / 2;
+      const currentRightX = point.x - sideX * width / 2;
+      const currentRightZ = point.z - sideZ * width / 2;
+      const offset = positions.length / 3;
+      positions.push(
+        previousLeftX, heightAt(previousLeftX, previousLeftZ) + .16, previousLeftZ,
+        previousRightX, heightAt(previousRightX, previousRightZ) + .16, previousRightZ,
+        currentLeftX, heightAt(currentLeftX, currentLeftZ) + .16, currentLeftZ,
+        currentRightX, heightAt(currentRightX, currentRightZ) + .16, currentRightZ
+      );
+      indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
+      roadSegments.push({
+        ax: previous.x, az: previous.z,
+        bx: point.x, bz: point.z
+      });
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const material = MAT.road.clone();
+    material.side = THREE.DoubleSide;
+    const road = new THREE.Mesh(geometry, material);
+    road.receiveShadow = true;
+    world.add(road);
+
+    const centerLinePoints = samples.map(point =>
+      new THREE.Vector3(point.x, heightAt(point.x, point.z) + .25, point.z)
+    );
+    const centerLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(centerLinePoints),
+      new THREE.LineDashedMaterial({ color: 0xfff0ae, dashSize: 4.5, gapSize: 5.5 })
+    );
+    centerLine.computeLineDistances();
+    world.add(centerLine);
+    mountainRoadSurfaces.push({ mountain: mountainTerrain, width, segments: roadSegments });
+  }
+
   function addGiantMountain(x, z, radius, height) {
     const mountain = new THREE.Mesh(
       new THREE.ConeGeometry(radius, height, 12, 5),
@@ -635,18 +701,31 @@
     snowCap.castShadow = true;
     snowCap.receiveShadow = true;
     world.add(snowCap);
-    terrainSurfaces.push({ type: "hill", x, z, radius, height, giant: true });
+    const mountainTerrain = { type: "hill", x, z, radius, height, giant: true };
+    terrainSurfaces.push(mountainTerrain);
+    addMountainRoad(mountainTerrain, [
+      [-540, -372],
+      [-635, -445],
+      [-640, -570],
+      [-465, -630],
+      [-435, -530],
+      [-545, -475],
+      [-560, -545],
+      [-510, -555],
+      [x, z]
+    ], 17);
   }
   addHill(-282, -52, 37, 17);
   addHill(246, -82, 48, 24, MAT.grassLight);
   addHill(275, 135, 31, 14);
   addHill(-212, 258, 42, 20, MAT.grassDark);
-  addHill(-525, -365, 62, 29, MAT.grassDark);
+  // 거대 설산의 진입로와 겹치지 않도록 서쪽 언덕을 충분히 떨어뜨립니다.
+  addHill(-330, -360, 62, 29, MAT.grassDark);
   addHill(520, -345, 70, 34, MAT.grassLight);
   addHill(490, 515, 58, 27, MAT.grassDark);
   addHill(-485, 505, 68, 33, MAT.grassLight);
   addHill(0, 575, 50, 24, MAT.grassDark);
-  addGiantMountain(-520, -535, 120, 112);
+  addGiantMountain(-520, -535, 165, 180);
 
   function overlapsHill(x, z, clearance = 0) {
     return terrainSurfaces.some(terrain =>
@@ -1862,6 +1941,38 @@
         const progress = THREE.MathUtils.clamp((local.z + ramp.length / 2) / ramp.length, 0, 1);
         return { height: progress * ramp.height, pitch: -Math.atan2(ramp.height, ramp.length), ramp, progress };
       }
+    }
+    // 설산 도로 위에서는 도로 아래의 산 경사를 그대로 사용해 차가 노면에 자연스럽게 붙습니다.
+    for (const road of mountainRoadSurfaces) {
+      const onRoad = road.segments.some(segment => {
+        const segmentX = segment.bx - segment.ax;
+        const segmentZ = segment.bz - segment.az;
+        const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+        const projection = lengthSquared > .001
+          ? ((position.x - segment.ax) * segmentX + (position.z - segment.az) * segmentZ) / lengthSquared
+          : 0;
+        const t = THREE.MathUtils.clamp(projection, 0, 1);
+        return Math.hypot(
+          position.x - (segment.ax + segmentX * t),
+          position.z - (segment.az + segmentZ * t)
+        ) <= road.width / 2 + margin;
+      });
+      if (!onRoad) continue;
+      const mountain = road.mountain;
+      const dx = position.x - mountain.x;
+      const dz = position.z - mountain.z;
+      const distance = Math.hypot(dx, dz);
+      const progress = THREE.MathUtils.clamp(1 - distance / mountain.radius, 0, 1);
+      const slope = mountain.height / mountain.radius;
+      return {
+        height: mountain.height * progress + .16,
+        pitch: 0,
+        gradientX: distance > .01 ? -slope * dx / distance : 0,
+        gradientZ: distance > .01 ? -slope * dz / distance : 0,
+        ramp: null,
+        terrain: mountain,
+        progress
+      };
     }
     for (const terrain of terrainSurfaces) {
       if (terrain.type === "box") {
