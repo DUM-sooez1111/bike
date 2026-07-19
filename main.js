@@ -601,8 +601,39 @@
   addBox(85, 1.415, 205, .22, .03, 34, MAT.roadEdge, 0, false);
   terrainSurfaces.push({ type: "box", minX: 78, maxX: 92, minZ: 187, maxZ: 223, height: 1.4 });
 
+  // 나무와 돌이 호수·강 안이나 물가에 겹쳐 생성되지 않도록 여유 공간까지 검사합니다.
+  function overlapsWater(x, z, clearance = 0) {
+    return waterZones.some(zone => {
+      if (zone.type === "ellipse") {
+        const nx = (x - zone.x) / (zone.radiusX + clearance);
+        const nz = (z - zone.z) / (zone.radiusZ + clearance);
+        return nx * nx + nz * nz < 1;
+      }
+      if (zone.type === "capsule") {
+        const segmentX = zone.bx - zone.ax;
+        const segmentZ = zone.bz - zone.az;
+        const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+        const projection = lengthSquared > .001
+          ? ((x - zone.ax) * segmentX + (z - zone.az) * segmentZ) / lengthSquared
+          : 0;
+        const t = THREE.MathUtils.clamp(projection, 0, 1);
+        const closestX = zone.ax + segmentX * t;
+        const closestZ = zone.az + segmentZ * t;
+        return Math.hypot(x - closestX, z - closestZ) < zone.radius + clearance;
+      }
+      return (
+        x >= zone.minX - clearance && x <= zone.maxX + clearance &&
+        z >= zone.minZ - clearance && z <= zone.maxZ + clearance
+      );
+    });
+  }
+
   function addTree(x, z, scale = 1) {
-    if (isDriveLane(x, z, 2.5 * scale) || overlapsHill(x, z, 2.8 * scale)) return null;
+    if (
+      isDriveLane(x, z, 2.5 * scale) ||
+      overlapsHill(x, z, 2.8 * scale) ||
+      overlapsWater(x, z, 3.2 * scale)
+    ) return null;
     const group = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.35, .52, 3.3, 6), MAT.trunk);
     trunk.position.y = 1.65;
@@ -656,7 +687,7 @@
     const radius = 96 + Math.random() * 30;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5) || overlapsWater(rockX, rockZ, 2.5)) continue;
     const rockRadius = .7 + Math.random() * 1.5;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .65, rockZ);
@@ -672,7 +703,7 @@
     const radius = 155 + Math.random() * 68;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5) || overlapsWater(rockX, rockZ, 2.5)) continue;
     const rockRadius = .6 + Math.random() * 1.35;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .58, rockZ);
@@ -688,7 +719,7 @@
     const radius = 245 + Math.random() * 125;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5) || overlapsWater(rockX, rockZ, 2.5)) continue;
     const rockRadius = .55 + Math.random() * 1.45;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .55, rockZ);
