@@ -325,7 +325,7 @@
     const onTrack = ellipse > .78 - clearance * .012 && ellipse < 1.24 + clearance * .012;
     const onWestRoad = x > -304 && x < -132 && Math.abs(z - 42) < 7 + clearance;
     const onSouthRoad = z > -304 && z < -132 && Math.abs(x - 68) < 7 + clearance;
-    const onBridge = x > 74 - clearance && x < 96 + clearance && z > 180 && z < 230;
+    const onBridge = x > 72 - clearance && x < 98 + clearance && z > 164 && z < 246;
     const atSpawn = Math.hypot(x, z + 12) < 11 + clearance;
     return onTrack || onWestRoad || onSouthRoad || onBridge || atSpawn;
   }
@@ -448,18 +448,93 @@
   world.add(lake);
   waterZones.push({ type: "ellipse", x: -258, z: -185, radiusX: 57, radiusZ: 34 });
 
-  // 강은 다리 폭만 비워 두 구간으로 나눕니다.
-  addBox(-141, .07, 205, 438, .12, 25, waterMaterial, 0, false);
-  addBox(272, .07, 205, 220, .12, 25, waterMaterial, 0, false);
-  waterZones.push(
-    { type: "box", minX: -360, maxX: 78, minZ: 192.5, maxZ: 217.5 },
-    { type: "box", minX: 92, maxX: 382, minZ: 192.5, maxZ: 217.5 }
-  );
+  // 굽이치는 강: 강둑, 수면, 물가 선을 같은 곡선에서 생성해 자연스럽게 이어 붙입니다.
+  const riverCenterZ = x => 205 + Math.sin((x - 85) * .018) * 10 + Math.sin((x - 85) * .041) * 3;
+  const riverWidth = x => 23 + Math.sin(x * .026) * 3.5;
+  const riverSamples = [];
+  for (let index = 0; index <= 40; index += 1) {
+    const x = THREE.MathUtils.lerp(-390, 390, index / 40);
+    riverSamples.push({ x, z: riverCenterZ(x), halfWidth: riverWidth(x) / 2 });
+  }
 
-  // 다리 상판은 주행 표면이고 양쪽 난간만 충돌합니다.
-  addBox(85, .72, 205, 14, 1.35, 36, MAT.concrete, 0, false);
-  addBox(78.5, 1.65, 205, .55, 2.2, 36, MAT.yellow);
-  addBox(91.5, 1.65, 205, .55, 2.2, 36, MAT.yellow);
+  function createRiverRibbon(extraWidth, y, material) {
+    const positions = [];
+    const indices = [];
+    riverSamples.forEach(point => {
+      positions.push(point.x, y, point.z - point.halfWidth - extraWidth);
+      positions.push(point.x, y, point.z + point.halfWidth + extraWidth);
+    });
+    for (let index = 0; index < riverSamples.length - 1; index += 1) {
+      const offset = index * 2;
+      indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.receiveShadow = true;
+    world.add(mesh);
+    return mesh;
+  }
+
+  createRiverRibbon(4.5, .018, MAT.dirt);
+  const riverMaterial = new THREE.MeshStandardMaterial({
+    color: 0x238fc4,
+    emissive: 0x073f5d,
+    emissiveIntensity: .18,
+    roughness: .28,
+    metalness: .04,
+    transparent: true,
+    opacity: .9,
+    side: THREE.DoubleSide,
+    flatShading: true
+  });
+  createRiverRibbon(0, .07, riverMaterial);
+
+  const bankLineMaterial = new THREE.LineBasicMaterial({ color: 0xb8ecf3, transparent: true, opacity: .8 });
+  [-1, 1].forEach(side => {
+    const points = riverSamples.map(point =>
+      new THREE.Vector3(point.x, .085, point.z + side * point.halfWidth)
+    );
+    world.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), bankLineMaterial));
+  });
+
+  // 물 충돌도 곡선을 따라가되 다리 아래는 통과할 수 있도록 비워 둡니다.
+  for (let index = 0; index < riverSamples.length - 1; index += 1) {
+    const a = riverSamples[index];
+    const b = riverSamples[index + 1];
+    const middleX = (a.x + b.x) / 2;
+    if (middleX > 50 && middleX < 122) continue;
+    waterZones.push({
+      type: "capsule",
+      ax: a.x, az: a.z,
+      bx: b.x, bz: b.z,
+      radius: (a.halfWidth + b.halfWidth) / 2
+    });
+  }
+
+  function addBridgeApproach(z, rotationY) {
+    const width = 14;
+    const length = 14;
+    const height = 1.4;
+    const mesh = new THREE.Mesh(createRampGeometry(width, length, height), MAT.road);
+    mesh.position.set(85, 0, z);
+    mesh.rotation.y = rotationY;
+    mesh.receiveShadow = true;
+    world.add(mesh);
+    terrainSurfaces.push({ type: "slope", x: 85, z, rotationY, width, length, height });
+  }
+
+  // 얇은 다리 상판과 양쪽 완만한 진입로를 연결해 수직 턱을 없앱니다.
+  addBox(85, .03, 166, 14, .06, 14, MAT.road, 0, false);
+  addBridgeApproach(180, 0);
+  addBox(85, 1.21, 205, 14, .38, 36, MAT.road, 0, false);
+  addBridgeApproach(230, Math.PI);
+  addBox(85, .03, 244, 14, .06, 14, MAT.road, 0, false);
+  addBox(78.55, 1.74, 205, .32, .68, 36, MAT.yellow);
+  addBox(91.45, 1.74, 205, .32, .68, 36, MAT.yellow);
+  addBox(85, 1.415, 205, .22, .03, 34, MAT.roadEdge, 0, false);
   terrainSurfaces.push({ type: "box", minX: 78, maxX: 92, minZ: 187, maxZ: 223, height: 1.4 });
 
   function addTree(x, z, scale = 1) {
@@ -1180,6 +1255,22 @@
           position.x >= terrain.minX - margin && position.x <= terrain.maxX + margin &&
           position.z >= terrain.minZ - margin && position.z <= terrain.maxZ + margin
         ) return { height: terrain.height, pitch: 0, ramp: null, terrain, progress: 0 };
+      } else if (terrain.type === "slope") {
+        const local = localRampCoordinates(terrain, position);
+        if (
+          Math.abs(local.x) <= terrain.width / 2 + margin &&
+          local.z >= -terrain.length / 2 - margin &&
+          local.z <= terrain.length / 2 + margin
+        ) {
+          const progress = THREE.MathUtils.clamp((local.z + terrain.length / 2) / terrain.length, 0, 1);
+          return {
+            height: progress * terrain.height,
+            pitch: -Math.atan2(terrain.height, terrain.length),
+            ramp: null,
+            terrain,
+            progress
+          };
+        }
       } else if (terrain.type === "hill") {
         const dx = position.x - terrain.x;
         const dz = position.z - terrain.z;
@@ -1251,6 +1342,24 @@
       const nz = (position.z - zone.z) / zone.radiusZ;
       if (nx * nx + nz * nz >= 1) return null;
       return { x: nx / zone.radiusX, z: nz / zone.radiusZ };
+    }
+    if (zone.type === "capsule") {
+      const segmentX = zone.bx - zone.ax;
+      const segmentZ = zone.bz - zone.az;
+      const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+      const projection = lengthSquared > .001
+        ? ((position.x - zone.ax) * segmentX + (position.z - zone.az) * segmentZ) / lengthSquared
+        : 0;
+      const t = THREE.MathUtils.clamp(projection, 0, 1);
+      const closestX = zone.ax + segmentX * t;
+      const closestZ = zone.az + segmentZ * t;
+      const dx = position.x - closestX;
+      const dz = position.z - closestZ;
+      const distance = Math.hypot(dx, dz);
+      if (distance >= zone.radius) return null;
+      if (distance > .001) return { x: dx / distance, z: dz / distance };
+      const length = Math.max(Math.hypot(segmentX, segmentZ), .001);
+      return { x: -segmentZ / length, z: segmentX / length };
     }
     if (
       position.x < zone.minX || position.x > zone.maxX ||
