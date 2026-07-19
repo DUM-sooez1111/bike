@@ -316,6 +316,7 @@
   const ramps = [];
   const terrainSurfaces = [];
   const waterZones = [];
+  const WATER_LEVEL = .78;
 
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30), MAT.grass);
   ground.rotation.x = -Math.PI / 2;
@@ -498,15 +499,16 @@
   }
 
   const waterMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .82, flatShading: true
+    color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .66,
+    depthWrite: false, side: THREE.DoubleSide, flatShading: true
   });
   const lake = new THREE.Mesh(new THREE.CircleGeometry(44, 20), waterMaterial);
   lake.rotation.x = -Math.PI / 2;
-  lake.position.set(-258, .08, -185);
+  lake.position.set(-258, WATER_LEVEL, -185);
   lake.scale.set(1.3, .78, 1);
   lake.receiveShadow = true;
   world.add(lake);
-  waterZones.push({ type: "ellipse", x: -258, z: -185, radiusX: 57, radiusZ: 34 });
+  waterZones.push({ type: "ellipse", x: -258, z: -185, radiusX: 57, radiusZ: 34, waterLevel: WATER_LEVEL });
 
   // 굽이치는 강: 강둑, 수면, 물가 선을 같은 곡선에서 생성해 자연스럽게 이어 붙입니다.
   const riverCenterZ = x => 205 + Math.sin((x - 85) * .018) * 10 + Math.sin((x - 85) * .041) * 3;
@@ -546,16 +548,17 @@
     roughness: .28,
     metalness: .04,
     transparent: true,
-    opacity: .9,
+    opacity: .68,
+    depthWrite: false,
     side: THREE.DoubleSide,
     flatShading: true
   });
-  createRiverRibbon(0, .07, riverMaterial);
+  createRiverRibbon(0, WATER_LEVEL - .05, riverMaterial);
 
   const bankLineMaterial = new THREE.LineBasicMaterial({ color: 0xb8ecf3, transparent: true, opacity: .8 });
   [-1, 1].forEach(side => {
     const points = riverSamples.map(point =>
-      new THREE.Vector3(point.x, .085, point.z + side * point.halfWidth)
+      new THREE.Vector3(point.x, WATER_LEVEL - .035, point.z + side * point.halfWidth)
     );
     world.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), bankLineMaterial));
   });
@@ -570,7 +573,8 @@
       type: "capsule",
       ax: a.x, az: a.z,
       bx: b.x, bz: b.z,
-      radius: (a.halfWidth + b.halfWidth) / 2
+      radius: (a.halfWidth + b.halfWidth) / 2,
+      waterLevel: WATER_LEVEL - .05
     });
   }
 
@@ -1157,17 +1161,6 @@
           break;
         }
       }
-      for (const zone of waterZones) {
-        const normal = waterCollisionNormal(zone, ai.root.position);
-        if (!normal || ai.root.position.y >= 3.2) continue;
-        if (ai.collisionCooldown <= 0) applyAIBounce(ai, normal.x, normal.z, ai.speed);
-        ai.knockbackOffset.x += normal.x * .8;
-        ai.knockbackOffset.y += normal.z * .8;
-        ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
-        ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
-        chooseRandomAITarget(ai);
-        break;
-      }
     });
 
     for (let i = 0; i < aiVehicles.length; i += 1) {
@@ -1198,7 +1191,8 @@
       let steering = 0;
       ai.collisionCooldown = Math.max(0, ai.collisionCooldown - dt);
       ai.speedScale = THREE.MathUtils.lerp(ai.speedScale, 1, 1 - Math.exp(-2.5 * dt));
-      const actualSpeed = ai.speed * ai.speedScale;
+      const waterSpeedScale = isPositionInWater(ai.pathPosition) ? .38 : 1;
+      const actualSpeed = ai.speed * ai.speedScale * waterSpeedScale;
       ai.decisionTimer -= dt;
       ai.wanderPhase += dt * ai.wanderTurnRate;
       const distanceToEdge = WORLD_HALF_SIZE - Math.max(Math.abs(ai.pathPosition.x), Math.abs(ai.pathPosition.z));
@@ -1307,7 +1301,7 @@
       }
     });
 
-    if (!state.grounded || Math.abs(state.velocity) < 3) {
+    if (!state.grounded || state.inWater || Math.abs(state.velocity) < 3) {
       previousTrackPoints = null;
       return;
     }
@@ -1414,7 +1408,7 @@
       particle.mesh.material.opacity = .62 * Math.pow(1 - progress, 1.35);
     });
 
-    const emitting = state.grounded && state.drift > .18 && Math.abs(state.velocity) > 6;
+    const emitting = state.grounded && !state.inWater && state.drift > .18 && Math.abs(state.velocity) > 6;
     if (!emitting) {
       smokeAccumulator = 0;
       return;
@@ -1451,6 +1445,7 @@
     drift: 0,
     knockback: new THREE.Vector2(),
     collisionCooldown: 0,
+    inWater: false,
     displayedSpeed: 0
   };
   const PHYSICS = {
@@ -1483,6 +1478,7 @@
     state.drift = 0;
     state.knockback.set(0, 0);
     state.collisionCooldown = 0;
+    state.inWater = isPositionInWater(state.position);
     state.displayedSpeed = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
     vehicleVisual.body.position.y = 0;
@@ -1650,6 +1646,11 @@
     return edges[0];
   }
 
+  // 물은 더 이상 벽이 아닙니다. 영역 판정은 수중 감속과 시각 효과에만 사용합니다.
+  function isPositionInWater(position) {
+    return waterZones.some(zone => waterCollisionNormal(zone, position));
+  }
+
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
@@ -1660,13 +1661,6 @@
         state.position.z = contact.z;
         return;
       }
-    }
-    for (const zone of waterZones) {
-      const normal = waterCollisionNormal(zone, state.position);
-      if (!normal || state.position.y >= 3.2) continue;
-      if (state.collisionCooldown <= 0) applyCollisionBounce(normal.x, normal.z, previous);
-      else state.position.copy(previous);
-      return;
     }
     for (const ai of aiVehicles) {
       const aiRadius = ai.definition.type === "bike" ? .9 : 1.45;
@@ -1695,15 +1689,17 @@
     const throttle = keys.w ? 1 : 0;
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
+    const inWaterBeforeMove = isPositionInWater(state.position) && state.position.y < WATER_LEVEL + .3;
+    const waterPropulsion = inWaterBeforeMove ? .38 : 1;
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
     const onRampBeforeMove = !!getSurfaceInfo(state.position).ramp;
-    const canDrift = state.grounded && !onRampBeforeMove && Math.abs(state.velocity) > 6;
+    const canDrift = state.grounded && !onRampBeforeMove && !inWaterBeforeMove && Math.abs(state.velocity) > 6;
     const driftTarget = keys[" "] && canDrift ? 1 : 0;
     state.drift = THREE.MathUtils.lerp(state.drift, driftTarget, 1 - Math.exp(-(driftTarget ? 8 : 11) * dt));
 
-    if (throttle) state.velocity += (state.velocity < -.5 ? spec.braking * .62 : spec.acceleration) * dt;
-    if (reverse) state.velocity -= (state.velocity > .5 ? spec.braking * .62 : PHYSICS.reverseAcceleration) * dt;
+    if (throttle) state.velocity += (state.velocity < -.5 ? spec.braking * .62 : spec.acceleration) * waterPropulsion * dt;
+    if (reverse) state.velocity -= (state.velocity > .5 ? spec.braking * .62 : PHYSICS.reverseAcceleration) * waterPropulsion * dt;
 
     if (braking && Math.abs(state.velocity) > .03) {
       const before = state.velocity;
@@ -1717,6 +1713,11 @@
       state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), drag * dt);
     }
     state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed);
+    if (inWaterBeforeMove) {
+      // 물속에서는 강한 저항을 받지만 멈춰 갇히지 않도록 저속 추진력은 유지합니다.
+      state.velocity *= Math.exp(-1.35 * dt);
+      state.velocity = THREE.MathUtils.clamp(state.velocity, -6.5, 10);
+    }
     if (state.drift > .02) {
       const driftDrag = (.9 + Math.abs(state.velocity) * .045) * state.drift;
       state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), driftDrag * dt);
@@ -1763,6 +1764,7 @@
 
     const previousSurface = getSurfaceInfo(previous);
     let surface = getSurfaceInfo(state.position);
+    state.inWater = isPositionInWater(state.position) && surface.height < WATER_LEVEL;
 
     // 점프대의 높은 뒤쪽이나 옆면에서 경사 높이가 즉시 적용되는 현상을 막습니다.
     // 지상 차량은 낮은 입구로 들어오거나 이미 같은 경사면 위에 있을 때만 올라갈 수 있습니다.
