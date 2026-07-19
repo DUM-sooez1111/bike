@@ -56,7 +56,11 @@
     { type: "super", className: "SPORT", prefix: "Apex", words: ["R", "Nova", "Pulse", "Velo", "GT"], base: { speed: 48, acceleration: 21, braking: 39, handling: 1.48 } },
     { type: "buggy", className: "OFFROAD", prefix: "Dust", words: ["Bug", "Ranger", "Hopper", "Claw", "Dune"], base: { speed: 35, acceleration: 19, braking: 32, handling: 1.95 } },
     { type: "roadster", className: "CRUISER", prefix: "City", words: ["Glide", "Breeze", "Flow", "Lumen", "Coast"], base: { speed: 41, acceleration: 16, braking: 36, handling: 1.78 } },
-    { type: "bike", className: "BIKE", prefix: "Volt", words: ["Rider", "Spark", "Arrow", "Whirl", "Bolt"], base: { speed: 44, acceleration: 23, braking: 30, handling: 2.08 } }
+    { type: "bike", className: "BIKE", prefix: "Volt", words: ["Rider", "Spark", "Arrow", "Whirl", "Bolt"], base: { speed: 44, acceleration: 23, braking: 30, handling: 2.08 } },
+    { type: "truck", className: "TRUCK", prefix: "Titan", words: ["Hauler", "Cargo", "Torque", "Road", "Max"], base: { speed: 34, acceleration: 13, braking: 40, handling: 1.25 } },
+    { type: "van", className: "VAN", prefix: "Metro", words: ["Mover", "Box", "Tour", "Cargo", "Shuttle"], base: { speed: 38, acceleration: 15, braking: 38, handling: 1.52 } },
+    { type: "kart", className: "KART", prefix: "Mini", words: ["Rocket", "Dash", "Sprint", "Zip", "Racer"], base: { speed: 42, acceleration: 24, braking: 32, handling: 2.35 } },
+    { type: "atv", className: "ATV", prefix: "Quad", words: ["Climber", "Mud", "Trail", "Ridge", "Storm"], base: { speed: 36, acceleration: 21, braking: 34, handling: 2.12 } }
   ];
 
   const scoreFromRange = (value, low, high) =>
@@ -103,6 +107,19 @@
       (a.vehicleData.price || 0) - (b.vehicleData.price || 0) ||
       a.vehicleData.name.localeCompare(b.vehicleData.name)
     );
+  const GARAGE_CATEGORIES = [
+    ["all", "전체"],
+    ["car", "랠리"],
+    ["super", "스포츠"],
+    ["buggy", "버기"],
+    ["roadster", "로드스터"],
+    ["bike", "바이크"],
+    ["truck", "트럭"],
+    ["van", "밴"],
+    ["kart", "카트"],
+    ["atv", "ATV"]
+  ];
+  let garageCategory = "all";
 
   // 차량 ID로 고유한 외형 값을 만듭니다. 같은 차량은 재실행 후에도 같은 모습입니다.
   function getVehicleVisualSpec(definition) {
@@ -1107,14 +1124,42 @@
       const isBuggy = definition.type === "buggy";
       const isSuper = definition.type === "super";
       const isRoadster = definition.type === "roadster";
-      const width = (isBuggy ? 2.9 : (isSuper ? 3.15 : 3.05)) * visual.widthScale;
-      const length = (isSuper ? 5.8 : 5.25) * visual.lengthScale;
-      const wheelRadius = (isBuggy ? .72 : (isSuper ? .55 : .61)) * visual.wheelScale;
-      const cabinY = (isSuper ? 1.48 : 1.65) * visual.heightScale;
+      const isTruck = definition.type === "truck";
+      const isVan = definition.type === "van";
+      const isKart = definition.type === "kart";
+      const isATV = definition.type === "atv";
+      const baseWidth = isTruck ? 3.45 : isVan ? 3.25 : isKart ? 2.3 : isATV ? 2.55 : isBuggy ? 2.9 : isSuper ? 3.15 : 3.05;
+      const baseLength = isTruck ? 6.7 : isVan ? 6.25 : isKart ? 3.55 : isATV ? 3.8 : isSuper ? 5.8 : 5.25;
+      const baseWheelRadius = isTruck ? .76 : isVan ? .64 : isKart ? .4 : isATV ? .68 : isBuggy ? .72 : isSuper ? .55 : .61;
+      const width = baseWidth * visual.widthScale;
+      const length = baseLength * visual.lengthScale;
+      const wheelRadius = baseWheelRadius * visual.wheelScale;
+      const cabinY = (isTruck ? 1.86 : isVan ? 1.78 : isKart ? 1.12 : isATV ? 1.38 : isSuper ? 1.48 : 1.65) * visual.heightScale;
+      const bodyHeight = isKart ? .34 : isATV ? .48 : isTruck ? .78 : .68;
+      const bodyY = wheelRadius + .39;
 
-      makeMesh(new THREE.BoxGeometry(width, isSuper ? .52 : .68, length), paint, 0, 1.02, 0, body);
-      makeMesh(new THREE.BoxGeometry(width * .88, .25, 1.15), paintDark, 0, 1.08, -length * .42, body);
-      if (isBuggy) {
+      makeMesh(new THREE.BoxGeometry(width, bodyHeight, length), paint, 0, bodyY, 0, body);
+      makeMesh(new THREE.BoxGeometry(width * .88, .25, Math.min(1.15, length * .22)), paintDark, 0, bodyY + .06, -length * .42, body);
+      if (isTruck) {
+        makeMesh(new THREE.BoxGeometry(width * .82, 1.35 * visual.heightScale, length * .28), paint, 0, cabinY, length * .25, body);
+        makeMesh(new THREE.BoxGeometry(width * .9, 1.45 * visual.heightScale, length * .48), accent, 0, cabinY + .05, -length * .2, body);
+        const windshield = makeMesh(new THREE.BoxGeometry(width * .7, .72 * visual.heightScale, .12), MAT.glass, 0, cabinY + .05, length * .4, body);
+        windshield.rotation.x = -.08;
+      } else if (isVan) {
+        makeMesh(new THREE.BoxGeometry(width * .82, 1.55 * visual.heightScale, length * .72), paint, 0, cabinY, -.2, body);
+        const windshield = makeMesh(new THREE.BoxGeometry(width * .7, .78 * visual.heightScale, .12), MAT.glass, 0, cabinY + .08, length * .29, body);
+        windshield.rotation.x = -.12;
+        makeMesh(new THREE.BoxGeometry(width * .08, .72, length * .34), accent, width * .42, cabinY, -.4, body);
+      } else if (isKart) {
+        makeMesh(new THREE.BoxGeometry(width * .5, .58, length * .28), MAT.dark, 0, cabinY, -.25, body);
+        makeMesh(new THREE.BoxGeometry(width * .5, .48, length * .2), accent, 0, bodyY + .25, -length * .34, body);
+        const steering = makeMesh(new THREE.CylinderGeometry(.05, .05, .72, 6), MAT.dark, 0, 1.18, length * .13, body);
+        steering.rotation.x = -.35;
+      } else if (isATV) {
+        makeMesh(new THREE.BoxGeometry(width * .48, .55, length * .38), paint, 0, cabinY, .18, body);
+        makeMesh(new THREE.BoxGeometry(width * .48, .18, length * .32), MAT.dark, 0, cabinY + .3, -length * .2, body);
+        makeMesh(new THREE.BoxGeometry(width * .78, .1, .12), MAT.dark, 0, cabinY + .7, length * .2, body);
+      } else if (isBuggy) {
         const cabin = makeMesh(new THREE.BoxGeometry(width * .73, 1.05 * visual.heightScale, length * .4), MAT.dark, 0, 1.7, visual.cabinShift, body);
         cabin.material = new THREE.MeshStandardMaterial({ color: 0x1d2b30, roughness: .6, wireframe: true });
         makeMesh(new THREE.BoxGeometry(width * .78, .22, .6), accent, 0, 1.38, length * .28, body);
@@ -1131,10 +1176,10 @@
         }
       }
       const lampX = width * .29;
-      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, -lampX, 1.14, length / 2 + .04, body);
-      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, lampX, 1.14, length / 2 + .04, body);
-      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, -lampX, 1.15, -length / 2 - .04, body);
-      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, lampX, 1.15, -length / 2 - .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, -lampX, bodyY + .12, length / 2 + .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, lampX, bodyY + .12, length / 2 + .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, -lampX, bodyY + .12, -length / 2 - .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, lampX, bodyY + .12, -length / 2 - .04, body);
       const axleZ = length * .315;
       wheel(-width / 2 - .08, wheelRadius + .07, axleZ, wheelRadius, true);
       wheel(width / 2 + .08, wheelRadius + .07, axleZ, wheelRadius, true);
@@ -1142,11 +1187,11 @@
       wheel(width / 2 + .08, wheelRadius + .07, -axleZ, wheelRadius, false);
 
       // 스트라이프와 포인트 파츠 조합으로 모든 모델의 실루엣을 구분합니다.
-      makeMesh(new THREE.BoxGeometry(width * (.1 + (visual.variant % 3) * .035), .05, length * .72), accent, 0, 1.38, 0, body);
+      makeMesh(new THREE.BoxGeometry(width * (.1 + (visual.variant % 3) * .035), .05, length * .72), accent, 0, bodyY + bodyHeight / 2 + .035, 0, body);
       if (visual.feature === 0 || visual.feature === 4) {
         makeMesh(new THREE.BoxGeometry(width * .28, .18, length * .15), MAT.dark, 0, 1.45, length * .26, body);
       }
-      if (visual.feature === 1 || visual.feature === 5) {
+      if ((visual.feature === 1 || visual.feature === 5) && !isKart && !isATV) {
         makeMesh(new THREE.BoxGeometry(width * .58, .2, length * .2), accent, 0, cabinY + .58, -.15 + visual.cabinShift, body);
       }
       if (visual.feature === 2) {
@@ -1207,7 +1252,11 @@
 
     // 부스터 사용 시 차량 뒤에서 보이는 저폴리곤 제트 불꽃입니다.
     const boostJets = [];
-    const jetPositions = isBike ? [[0, 1.02, -1.95]] : [[-.72, .95, -3.25], [.72, .95, -3.25]];
+    const jetZ = definition.type === "truck" ? -3.85
+      : definition.type === "van" ? -3.55
+        : definition.type === "kart" || definition.type === "atv" ? -2.15
+          : -3.25;
+    const jetPositions = isBike ? [[0, 1.02, -1.95]] : [[-.72, .95, jetZ], [.72, .95, jetZ]];
     jetPositions.forEach(([x, y, z]) => {
       const jet = new THREE.Mesh(
         new THREE.ConeGeometry(isBike ? .18 : .23, isBike ? 1.05 : 1.25, 7),
@@ -2297,8 +2346,31 @@
     toastTimer = setTimeout(() => toast.classList.remove("visible"), 2400);
   }
 
+  function renderGarageCategories() {
+    $("#garage-categories").innerHTML = GARAGE_CATEGORIES.map(([id, label]) => `
+      <button class="garage-category ${garageCategory === id ? "active" : ""}" type="button" data-category="${id}">
+        ${label}
+      </button>
+    `).join("");
+    $$(".garage-category").forEach(button => button.addEventListener("click", () => {
+      garageCategory = button.dataset.category;
+      const visibleVehicles = GARAGE_ORDER.filter(({ vehicleData }) =>
+        garageCategory === "all" || vehicleData.type === garageCategory
+      );
+      if (!visibleVehicles.some(({ index }) => index === previewIndex) && visibleVehicles.length) {
+        previewIndex = visibleVehicles[0].index;
+        updateVehicleDetail();
+      }
+      renderGarageCategories();
+      renderVehicleList();
+    }));
+  }
+
   function renderVehicleList() {
-    $("#vehicle-list").innerHTML = GARAGE_ORDER.map(({ vehicleData, index }) => `
+    const visibleVehicles = GARAGE_ORDER.filter(({ vehicleData }) =>
+      garageCategory === "all" || vehicleData.type === garageCategory
+    );
+    $("#vehicle-list").innerHTML = visibleVehicles.map(({ vehicleData, index }) => `
       <button class="vehicle-card ${index === previewIndex ? "selected" : ""}" type="button" role="option"
         aria-selected="${index === previewIndex}" data-vehicle="${index}" style="${getGarageCardStyle(vehicleData)}">
         <span class="vehicle-thumb ${getGarageThumbClass(vehicleData)}"></span>
@@ -2683,6 +2755,7 @@
     lastTime = performance.now();
   });
 
+  renderGarageCategories();
   renderVehicleList();
   updateVehicleDetail();
   renderAccessories();

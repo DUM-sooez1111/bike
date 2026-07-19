@@ -126,6 +126,18 @@ kbd, .prompt-key {
 .panel-heading h2 { margin: 8px 0 7px; font-size: clamp(25px, 3vw, 42px); letter-spacing: -.04em; }
 .panel-heading p { margin: 0; color: var(--muted); font-size: 13px; }
 
+.garage-categories {
+  display: flex; gap: 7px; margin: 14px 0 16px; padding-bottom: 3px; overflow-x: auto;
+  scrollbar-width: thin; scrollbar-color: #465263 transparent;
+}
+.garage-category {
+  flex: 0 0 auto; padding: 8px 11px; border: 1px solid #34404e; border-radius: 9px;
+  color: #aeb9c6; background: #171e27; font-size: 10px; font-weight: 800; cursor: pointer;
+}
+.garage-category:hover, .garage-category.active {
+  border-color: var(--cyan); color: white; background: #1d3440;
+}
+
 .garage-layout { display: grid; grid-template-columns: 285px 1fr; gap: 26px; min-height: 590px; }
 .vehicle-list {
   display: flex; flex-direction: column; gap: 9px; max-height: calc(100vh - 175px); padding-right: 7px; overflow-y: auto;
@@ -156,6 +168,14 @@ kbd, .prompt-key {
 .vehicle-thumb.type-super::before { border-radius: 12px 18px 3px 3px; }
 .vehicle-thumb.type-buggy::after { background: repeating-linear-gradient(90deg, #111a20 0 3px, var(--vehicle-accent) 3px 5px); border-radius: 3px; }
 .vehicle-thumb.type-roadster::after { height: calc(var(--thumb-height) * .38); border-radius: 12px 12px 2px 2px; }
+.vehicle-thumb.type-truck::before { height: calc(var(--thumb-height) * 1.12); border-radius: 3px; }
+.vehicle-thumb.type-truck::after { width: calc(var(--thumb-width) * .4); height: calc(var(--thumb-height) * 1.05); left: 64%; border-radius: 3px 7px 2px 2px; }
+.vehicle-thumb.type-van::before { height: calc(var(--thumb-height) * 1.2); border-radius: 8px 8px 3px 3px; }
+.vehicle-thumb.type-van::after { width: calc(var(--thumb-width) * .7); height: calc(var(--thumb-height) * .78); }
+.vehicle-thumb.type-kart::before { height: calc(var(--thumb-height) * .55); bottom: 16px; border-radius: 9px 12px 3px 3px; }
+.vehicle-thumb.type-kart::after { width: calc(var(--thumb-width) * .25); height: calc(var(--thumb-height) * .55); bottom: 25px; background: var(--vehicle-accent); }
+.vehicle-thumb.type-atv::before { width: calc(var(--thumb-width) * .74); height: calc(var(--thumb-height) * .72); border-radius: 5px; }
+.vehicle-thumb.type-atv::after { width: calc(var(--thumb-width) * .34); height: calc(var(--thumb-height) * .7); background: var(--vehicle-accent); }
 .vehicle-thumb.type-bike::before {
   width: calc(var(--thumb-width) * .48); height: calc(var(--thumb-height) * 1.2); bottom: 16px;
   border-radius: 50% 12px 5px 5px; border-bottom-width: 3px;
