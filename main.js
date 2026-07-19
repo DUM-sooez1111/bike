@@ -398,7 +398,7 @@
     const z = trackCenter.z + Math.sin(a) * 31;
     const nx = trackCenter.x + Math.cos(next) * 48;
     const nz = trackCenter.z + Math.sin(next) * 31;
-    const segment = addBox((x + nx) / 2, .035, (z + nz) / 2, 8.2, .07, Math.hypot(nx - x, nz - z) + .8, MAT.road, Math.atan2(nx - x, nz - z), false);
+    const segment = addBox((x + nx) / 2, .035, (z + nz) / 2, 12.4, .07, Math.hypot(nx - x, nz - z) + .8, MAT.road, Math.atan2(nx - x, nz - z), false);
     segment.receiveShadow = true;
     if (i % 3 === 0) addBox(x, .09, z, .18, .08, 2.3, MAT.roadEdge, Math.atan2(nx - x, nz - z), false);
   }
@@ -430,6 +430,7 @@
 
   // 여러 지점을 잇는 도로를 만들고 나무·돌 생성 제외 구역에도 등록합니다.
   function addRoadPath(points, width = 10, material = MAT.road) {
+    width *= 1.45;
     const controlPoints = points.map(([x, z]) => new THREE.Vector3(x, .038, z));
     const curve = new THREE.CatmullRomCurve3(controlPoints, false, "centripetal", .5);
     const roughLength = points.slice(1).reduce((total, point, index) =>
@@ -534,8 +535,8 @@
   addRoadPath([[-565,-315],[-565,-355],[-555,-385],[-540,-405]], 11, MAT.dirt);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
-  addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
-  addBox(68, .025, -218, 10, .05, 150, MAT.dirt, 0, false);
+  addBox(-218, .025, 42, 155, .05, 15, MAT.dirt, 0, false);
+  addBox(68, .025, -218, 15, .05, 150, MAT.dirt, 0, false);
 
   // 도로와 트랙을 막지 않는 북서쪽 전용 장애물 연습 구역
   [
@@ -795,7 +796,7 @@
   groundGeometry.computeVertexNormals();
 
   function addBridgeApproach(z, rotationY) {
-    const width = 14;
+    const width = 18;
     const length = 14;
     const height = 1.4;
     const mesh = new THREE.Mesh(createRampGeometry(width, length, height), MAT.road);
@@ -807,15 +808,15 @@
   }
 
   // 얇은 다리 상판과 양쪽 완만한 진입로를 연결해 수직 턱을 없앱니다.
-  addBox(85, .03, 166, 14, .06, 14, MAT.road, 0, false);
+  addBox(85, .03, 166, 18, .06, 14, MAT.road, 0, false);
   addBridgeApproach(180, 0);
-  addBox(85, 1.21, 205, 14, .38, 36, MAT.road, 0, false);
+  addBox(85, 1.21, 205, 18, .38, 36, MAT.road, 0, false);
   addBridgeApproach(230, Math.PI);
-  addBox(85, .03, 244, 14, .06, 14, MAT.road, 0, false);
-  addBox(78.55, 1.74, 205, .32, .68, 36, MAT.yellow);
-  addBox(91.45, 1.74, 205, .32, .68, 36, MAT.yellow);
+  addBox(85, .03, 244, 18, .06, 14, MAT.road, 0, false);
+  addBox(76.45, 1.74, 205, .32, .68, 36, MAT.yellow);
+  addBox(93.55, 1.74, 205, .32, .68, 36, MAT.yellow);
   addBox(85, 1.415, 205, .22, .03, 34, MAT.roadEdge, 0, false);
-  terrainSurfaces.push({ type: "box", minX: 78, maxX: 92, minZ: 187, maxZ: 223, height: 1.4 });
+  terrainSurfaces.push({ type: "box", minX: 76, maxX: 94, minZ: 187, maxZ: 223, height: 1.4 });
 
   // 나무와 돌이 호수·강 안이나 물가에 겹쳐 생성되지 않도록 여유 공간까지 검사합니다.
   function overlapsWater(x, z, clearance = 0) {
