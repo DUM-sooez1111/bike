@@ -921,6 +921,39 @@
     return ai.definition.type === "bike" ? .9 : 1.45;
   }
 
+  // 충돌체 안으로 한 프레임 깊게 들어가도 가장 가까운 바깥 지점까지 즉시 분리합니다.
+  // 이전 방식처럼 작은 반동만 반복하면 W를 누른 채 나무에 닿았을 때 차가 끼어 떨릴 수 있습니다.
+  function getBoxContact(box, position, radius) {
+    const closestX = THREE.MathUtils.clamp(position.x, box.minX, box.maxX);
+    const closestZ = THREE.MathUtils.clamp(position.z, box.minZ, box.maxZ);
+    const dx = position.x - closestX;
+    const dz = position.z - closestZ;
+    const distance = Math.hypot(dx, dz);
+    if (distance >= radius) return null;
+
+    if (distance > .0001) {
+      const normalX = dx / distance;
+      const normalZ = dz / distance;
+      const push = radius - distance + .04;
+      return {
+        normalX,
+        normalZ,
+        x: position.x + normalX * push,
+        z: position.z + normalZ * push
+      };
+    }
+
+    // 차량 중심이 상자 내부에 들어온 경우 확장된 네 면 중 가장 가까운 면으로 꺼냅니다.
+    const exits = [
+      { distance: position.x - (box.minX - radius), normalX: -1, normalZ: 0, x: box.minX - radius - .04, z: position.z },
+      { distance: box.maxX + radius - position.x, normalX: 1, normalZ: 0, x: box.maxX + radius + .04, z: position.z },
+      { distance: position.z - (box.minZ - radius), normalX: 0, normalZ: -1, x: position.x, z: box.minZ - radius - .04 },
+      { distance: box.maxZ + radius - position.z, normalX: 0, normalZ: 1, x: position.x, z: box.maxZ + radius + .04 }
+    ];
+    exits.sort((a, b) => a.distance - b.distance);
+    return exits[0];
+  }
+
   function applyAIBounce(ai, normalX, normalZ, impactSpeed = ai.speed) {
     let length = Math.hypot(normalX, normalZ);
     if (length < .001) {
@@ -948,19 +981,15 @@
     aiVehicles.forEach(ai => {
       const radius = aiCollisionRadius(ai);
       for (const box of colliders) {
-        const closestX = THREE.MathUtils.clamp(ai.root.position.x, box.minX, box.maxX);
-        const closestZ = THREE.MathUtils.clamp(ai.root.position.z, box.minZ, box.maxZ);
-        const dx = ai.root.position.x - closestX;
-        const dz = ai.root.position.z - closestZ;
-        const distance = Math.hypot(dx, dz);
-        if (distance < radius && ai.root.position.y < (box.maxY ?? 3.2) + .55) {
-          if (ai.collisionCooldown <= 0) applyAIBounce(ai, dx, dz, ai.speed);
-          const push = Math.max(.08, radius - distance + .08);
-          const normalLength = Math.max(distance, .001);
-          ai.knockbackOffset.x += (distance > .001 ? dx / normalLength : -Math.sin(ai.heading)) * push;
-          ai.knockbackOffset.y += (distance > .001 ? dz / normalLength : -Math.cos(ai.heading)) * push;
-          ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
-          ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
+        const contact = getBoxContact(box, ai.root.position, radius);
+        if (contact && ai.root.position.y < (box.maxY ?? 3.2) + .55) {
+          if (ai.collisionCooldown <= 0) applyAIBounce(ai, contact.normalX, contact.normalZ, ai.speed);
+          ai.root.position.x = contact.x;
+          ai.root.position.z = contact.z;
+          ai.knockbackOffset.set(
+            ai.root.position.x - ai.pathPosition.x,
+            ai.root.position.z - ai.pathPosition.z
+          );
           break;
         }
       }
@@ -1227,16 +1256,11 @@
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
-      const x = THREE.MathUtils.clamp(state.position.x, box.minX, box.maxX);
-      const z = THREE.MathUtils.clamp(state.position.z, box.minZ, box.maxZ);
-      const dx = state.position.x - x;
-      const dz = state.position.z - z;
-      if (dx * dx + dz * dz < radius * radius && state.position.y < (box.maxY ?? 3.2) + .55) {
-        if (state.collisionCooldown <= 0) applyCollisionBounce(dx, dz, previous);
-        else {
-          state.position.x = previous.x;
-          state.position.z = previous.z;
-        }
+      const contact = getBoxContact(box, state.position, radius);
+      if (contact && state.position.y < (box.maxY ?? 3.2) + .55) {
+        if (state.collisionCooldown <= 0) applyCollisionBounce(contact.normalX, contact.normalZ, previous);
+        state.position.x = contact.x;
+        state.position.z = contact.z;
         return;
       }
     }
