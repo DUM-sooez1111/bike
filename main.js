@@ -1153,8 +1153,10 @@
   function localRampCoordinates(ramp, position) {
     const dx = position.x - ramp.x;
     const dz = position.z - ramp.z;
-    const c = Math.cos(-ramp.rotationY);
-    const s = Math.sin(-ramp.rotationY);
+    const c = Math.cos(ramp.rotationY);
+    const s = Math.sin(ramp.rotationY);
+    // Three.js의 Y축 회전은 로컬 +Z를 (sin θ, cos θ) 방향으로 보냅니다.
+    // 역변환도 같은 규칙을 사용해야 ±90° 점프대의 낮은 입구가 반대로 판정되지 않습니다.
     return { x: dx * c - dz * s, z: dx * s + dz * c };
   }
 
