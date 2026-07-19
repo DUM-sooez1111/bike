@@ -164,7 +164,8 @@
   DESTINATIONS.push(
     { name: "북쪽 대평원", copy: "확장된 맵의 북쪽 끝을 달리는 넓은 초원", icon: "🧭", x: 80, z: 575, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 황야", copy: "긴 도로와 거대한 언덕이 이어지는 외곽 지역", icon: "🏜️", x: 585, z: -265, heading: -Math.PI / 2, unlockMinutes: 0 },
-    { name: "서쪽 끝자락", copy: "초장거리 직선 도로의 서쪽 종점", icon: "🌄", x: -620, z: 42, heading: Math.PI / 2, unlockMinutes: 0 }
+    { name: "서쪽 끝자락", copy: "초장거리 직선 도로의 서쪽 종점", icon: "🌄", x: -620, z: 42, heading: Math.PI / 2, unlockMinutes: 0 },
+    { name: "거대 설산", copy: "아주 높고 가파른 산을 정상까지 오르는 극한 코스", icon: "🏔️", x: -540, z: -405, heading: Math.PI, unlockMinutes: 0 }
   );
 
   const PAINTS = [
@@ -484,6 +485,7 @@
   addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258],[-175,315],[-285,330],[-405,375],[-575,430]], 10);
   addRoadPath([[105,245],[185,275],[275,315],[380,360],[545,430]], 10);
   addRoadPath([[42,252],[35,340],[52,430],[75,515],[80,620]], 10);
+  addRoadPath([[-565,-315],[-565,-355],[-555,-385],[-540,-405]], 11, MAT.dirt);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
@@ -555,6 +557,32 @@
     world.add(hill);
     terrainSurfaces.push({ type: "hill", x, z, radius, height });
   }
+
+  function addGiantMountain(x, z, radius, height) {
+    const mountain = new THREE.Mesh(
+      new THREE.ConeGeometry(radius, height, 12, 5),
+      MAT.concreteDark
+    );
+    mountain.position.set(x, height / 2 - .05, z);
+    mountain.rotation.y = Math.PI / 12;
+    mountain.castShadow = true;
+    mountain.receiveShadow = true;
+    world.add(mountain);
+
+    // 본체와 같은 경사를 가진 작은 원뿔을 겹쳐 자연스러운 눈 덮인 정상을 만듭니다.
+    const snowHeight = height * .34;
+    const snowRadius = radius * (snowHeight / height);
+    const snowCap = new THREE.Mesh(
+      new THREE.ConeGeometry(snowRadius, snowHeight, 12, 3),
+      MAT.white
+    );
+    snowCap.position.set(x, height - snowHeight / 2 - .03, z);
+    snowCap.rotation.y = mountain.rotation.y;
+    snowCap.castShadow = true;
+    snowCap.receiveShadow = true;
+    world.add(snowCap);
+    terrainSurfaces.push({ type: "hill", x, z, radius, height, giant: true });
+  }
   addHill(-282, -52, 37, 17);
   addHill(246, -82, 48, 24, MAT.grassLight);
   addHill(275, 135, 31, 14);
@@ -564,6 +592,7 @@
   addHill(490, 515, 58, 27, MAT.grassDark);
   addHill(-485, 505, 68, 33, MAT.grassLight);
   addHill(0, 575, 50, 24, MAT.grassDark);
+  addGiantMountain(-520, -535, 120, 112);
 
   function overlapsHill(x, z, clearance = 0) {
     return terrainSurfaces.some(terrain =>
