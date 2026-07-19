@@ -48,6 +48,11 @@ button { color: inherit; }
 @keyframes moneyBump { 50% { transform: scale(1.08); border-color: var(--yellow); } }
 .hud-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
 .hud-chip.locked i { background: var(--yellow); box-shadow: none; }
+.boost-chip { order: 5; }
+.boost-chip b { min-width: 35px; color: #6fffd0; text-align: right; }
+.boost-chip.active { border-color: #55e8ff; box-shadow: 0 0 18px rgba(38,210,255,.26); }
+.boost-chip.active b { color: #55e8ff; }
+.boost-chip.empty b { color: #ff6b7a; }
 
 /* ── Left menu: supplied reference's stacked dark cards + color rails ── */
 #side-menu {
@@ -347,6 +352,10 @@ kbd, .prompt-key {
     background: rgba(13,19,27,.62); backdrop-filter: blur(8px); touch-action: none; -webkit-user-select: none; user-select: none;
   }
   #mobile-controls button[data-key=" "] { width: 64px; border-radius: 14px; font-size: 9px; }
+  #mobile-controls button[data-key="control"] {
+    width: 64px; border-color: rgba(85,232,255,.58); border-radius: 14px;
+    color: #7ff4ff; font-size: 9px; font-weight: 900;
+  }
   #interaction-prompt { bottom: 90px; min-width: min(390px, calc(100% - 100px)); }
 }
 
@@ -397,6 +406,7 @@ kbd, .prompt-key {
   .menu-icon { font-size: 18px; }
   #mobile-controls button { width: 46px; height: 46px; }
   #mobile-controls button[data-key=" "] { width: 58px; }
+  #mobile-controls button[data-key="control"] { width: 58px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

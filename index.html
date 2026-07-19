@@ -15,6 +15,7 @@
       <canvas id="game-canvas"></canvas>
 
       <header id="hud">
+        <div id="boost-status" class="hud-chip boost-chip ready"><span>BOOST</span><b id="boost-value">100%</b></div>
         <div class="speed-block">
           <span class="hud-label">CURRENT SPEED</span>
           <div><strong id="speed">000</strong><span>KM/H</span></div>
@@ -50,6 +51,7 @@
       </section>
 
       <section id="control-guide">
+        <span><kbd>CTRL</kbd> 부스터</span>
         <span><kbd>D / A</kbd> 좌회전 / 우회전</span>
         <span><kbd>SHIFT</kbd> 브레이크</span>
         <span><kbd>SPACE</kbd> 드리프트</span>
@@ -63,6 +65,7 @@
           <button data-key="a" type="button">▶</button>
         </div>
         <div class="touch-drive">
+          <button data-key="control" type="button">BOOST</button>
           <button data-key="w" type="button">▲</button>
           <button data-key="s" type="button">▼</button>
           <button data-key=" " type="button">DRIFT</button>

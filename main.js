@@ -201,6 +201,8 @@
   const speedText = $("#speed");
   const fpsText = $("#fps");
   const driftStatus = $("#drift-status");
+  const boostStatus = $("#boost-status");
+  const boostValue = $("#boost-value");
   const moneyText = $("#money");
   // 기존 800×800 맵을 1400×1400으로 확장합니다.
   const WORLD_HALF_SIZE = 700;
@@ -1173,7 +1175,22 @@
       );
       flag.rotation.y = Math.PI / 2;
     }
-    return { root, body, wheels, frontPivots };
+
+    // 부스터 사용 시 차량 뒤에서 보이는 저폴리곤 제트 불꽃입니다.
+    const boostJets = [];
+    const jetPositions = isBike ? [[0, 1.02, -1.95]] : [[-.72, .95, -3.25], [.72, .95, -3.25]];
+    jetPositions.forEach(([x, y, z]) => {
+      const jet = new THREE.Mesh(
+        new THREE.ConeGeometry(isBike ? .18 : .23, isBike ? 1.05 : 1.25, 7),
+        new THREE.MeshBasicMaterial({ color: 0x55e8ff, transparent: true, opacity: .9 })
+      );
+      jet.position.set(x, y, z);
+      jet.rotation.x = -Math.PI / 2;
+      jet.visible = false;
+      body.add(jet);
+      boostJets.push(jet);
+    });
+    return { root, body, wheels, frontPivots, boostJets };
   }
 
   const ownedVehicleIds = new Set(VEHICLES.filter(vehicleData => !vehicleData.generated).map(vehicleData => vehicleData.id));
@@ -1657,6 +1674,8 @@
     knockback: new THREE.Vector2(),
     collisionCooldown: 0,
     inWater: false,
+    boostCharge: 1,
+    boosting: false,
     displayedSpeed: 0
   };
   const PHYSICS = {
@@ -1690,6 +1709,7 @@
     state.knockback.set(0, 0);
     state.collisionCooldown = 0;
     state.inWater = isPositionInWater(state.position);
+    state.boosting = false;
     state.displayedSpeed = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
     vehicleVisual.body.position.y = 0;
@@ -1920,12 +1940,32 @@
       if (Math.sign(before) !== Math.sign(state.velocity)) state.velocity = 0;
     }
 
+    const boostRequested =
+      !!keys.control &&
+      state.grounded &&
+      !inWaterBeforeMove &&
+      !braking &&
+      state.velocity >= -.2 &&
+      state.boostCharge > .005;
+    state.boosting = boostRequested;
+    if (state.boosting) {
+      state.velocity += (31 + spec.acceleration * .48) * dt;
+      state.boostCharge = Math.max(0, state.boostCharge - .29 * dt);
+      if (state.boostCharge <= .005) state.boosting = false;
+    } else {
+      state.boostCharge = Math.min(1, state.boostCharge + .155 * dt);
+    }
+
     // 스로틀을 놓으면 구름저항과 타이어 마찰이 관성에 점진적으로 작용합니다.
     if (!throttle && !reverse) {
       const drag = PHYSICS.rollingDrag + state.velocity * state.velocity * PHYSICS.airDrag;
       state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity), drag * dt);
     }
-    state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed);
+    if (!state.boosting && state.velocity > spec.maxSpeed) {
+      const overspeed = state.velocity - spec.maxSpeed;
+      state.velocity -= Math.min(overspeed, (spec.acceleration + 10) * dt);
+    }
+    state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed * 1.35);
     if (inWaterBeforeMove) {
       // 물속에서는 강한 저항을 받지만 멈춰 갇히지 않도록 저속 추진력은 유지합니다.
       state.velocity *= Math.exp(-1.35 * dt);
@@ -2066,6 +2106,14 @@
     vehicleVisual.body.rotation.z = state.roll;
     // 회전 중심 때문에 뒷바퀴가 지면 아래로 내려가지 않도록 차체를 함께 들어 줍니다.
     vehicleVisual.body.position.y = Math.sin(state.wheelie) * (spec.type === "bike" ? 1.48 : 1.35);
+    vehicleVisual.boostJets.forEach((jet, index) => {
+      jet.visible = state.boosting;
+      if (state.boosting) {
+        const pulse = 1 + Math.sin(performance.now() * .035 + index) * .24;
+        jet.scale.set(.88 + pulse * .12, pulse, .88 + pulse * .12);
+        jet.material.color.setHex(index % 2 ? 0x55e8ff : 0xffc247);
+      }
+    });
     blobShadow.visible = !state.inWater;
     blobShadow.position.set(state.position.x, .025, state.position.z);
     blobShadow.material.opacity = THREE.MathUtils.clamp(.48 - state.position.y * .045, .08, .48);
@@ -2502,14 +2550,14 @@
     if (!audioContext) return;
     const now = audioContext.currentTime;
     const ratio = Math.abs(state.velocity) / currentVehicle().maxSpeed;
-    engineOscillator.frequency.setTargetAtTime(44 + ratio * 105 + (keys.w ? 11 : 0), now, .08);
-    engineGain.gain.setTargetAtTime(soundEnabled && started && !paused && !uiOpen ? .012 + ratio * .026 : 0, now, .12);
+    engineOscillator.frequency.setTargetAtTime(44 + ratio * 105 + (keys.w ? 11 : 0) + (state.boosting ? 38 : 0), now, .08);
+    engineGain.gain.setTargetAtTime(soundEnabled && started && !paused && !uiOpen ? .012 + ratio * .026 + (state.boosting ? .012 : 0) : 0, now, .12);
   }
 
   // 키보드, 터치 입력. 폼 요소에 입력 중일 때는 게임 조작을 막습니다.
   window.addEventListener("keydown", event => {
     const key = event.key.toLowerCase();
-    if (["w","a","s","d","shift"," ","t","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
+    if (["w","a","s","d","shift","control"," ","t","v","escape"].includes(key) && !["INPUT","SELECT"].includes(event.target.tagName)) event.preventDefault();
     if (key === "escape" && started) {
       if (drawer.classList.contains("open")) closeDrawer();
       else setPaused(!paused);
@@ -2545,7 +2593,7 @@
     button.addEventListener("lostpointercapture", () => set(false));
   });
   window.addEventListener("pointercancel", () => {
-    ["w", "a", "s", "d", " "].forEach(key => { keys[key] = false; });
+    ["w", "a", "s", "d", " ", "control"].forEach(key => { keys[key] = false; });
   });
 
   function setPaused(value) {
@@ -2619,6 +2667,11 @@
 
   function updateUI(dt) {
     speedText.textContent = String(Math.round(state.displayedSpeed * 3.6)).padStart(3, "0");
+    const boostPercent = Math.round(state.boostCharge * 100);
+    boostValue.textContent = `${boostPercent}%`;
+    boostStatus.classList.toggle("active", state.boosting);
+    boostStatus.classList.toggle("empty", boostPercent <= 0);
+    boostStatus.classList.toggle("ready", boostPercent >= 99);
     fpsFrames += 1;
     fpsElapsed += dt;
     if (fpsElapsed > .45) {
