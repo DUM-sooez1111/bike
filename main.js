@@ -1113,7 +1113,8 @@
     steerVisual: 0,
     drift: 0,
     knockback: new THREE.Vector2(),
-    collisionCooldown: 0
+    collisionCooldown: 0,
+    displayedSpeed: 0
   };
   const PHYSICS = {
     reverseAcceleration: 11,
@@ -1145,6 +1146,7 @@
     state.drift = 0;
     state.knockback.set(0, 0);
     state.collisionCooldown = 0;
+    state.displayedSpeed = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
     vehicleVisual.body.position.y = 0;
     if (message) showToast(message);
@@ -1352,6 +1354,14 @@
     state.knockback.multiplyScalar(Math.exp(-4.8 * dt));
     state.collisionCooldown = Math.max(0, state.collisionCooldown - dt);
     resolveCollisions(previous);
+    // 바퀴 속도가 남아 있어도 실제 위치가 움직이지 않으면 HUD가 높은 속도로 고정되지 않게 합니다.
+    const planarSpeed = Math.hypot(state.position.x - previous.x, state.position.z - previous.z) / Math.max(dt, .001);
+    const displayedTarget = Math.min(Math.abs(state.velocity), planarSpeed);
+    state.displayedSpeed = THREE.MathUtils.lerp(
+      state.displayedSpeed,
+      displayedTarget,
+      1 - Math.exp(-(displayedTarget < state.displayedSpeed ? 14 : 8) * dt)
+    );
     distanceForCredits += Math.abs(state.velocity) * dt;
     if (distanceForCredits >= 150) {
       distanceForCredits -= 150;
@@ -1649,6 +1659,8 @@
     $$(".drawer-panel").forEach(panel => panel.classList.toggle("active", panel.dataset.panelContent === name));
     $$(".menu-button").forEach(button => button.classList.toggle("active", button.dataset.panel === name));
     if (name === "garage") setTimeout(resizePreview, 50);
+    if (name === "teleport") renderDestinations();
+    if (name === "gifts") renderRewardBoard();
   }
 
   function closeDrawer() {
@@ -1792,8 +1804,10 @@
     const second = getSessionSeconds();
     if (second === lastTimedUiSecond) return;
     lastTimedUiSecond = second;
-    renderRewardBoard();
-    renderDestinations();
+    const activePanel = $(".drawer-panel.active")?.dataset.panelContent;
+    // 닫혀 있는 대형 메뉴 DOM을 매초 다시 만들지 않아 저사양 환경의 프레임 정지를 방지합니다.
+    if (drawer.classList.contains("open") && activePanel === "gifts") renderRewardBoard();
+    if (drawer.classList.contains("open") && activePanel === "teleport") renderDestinations();
   }
 
   function applyQuality(value, notifyPlayer = true) {
@@ -1932,9 +1946,39 @@
   let fpsFrames = 0;
   let fpsElapsed = 0;
   let autoSaveElapsed = 0;
+  let lastRuntimeErrorAt = 0;
+  let contextLost = false;
+  const lastStablePosition = state.position.clone();
+
+  function runFrameSystem(name, callback) {
+    try {
+      callback();
+      return true;
+    } catch (error) {
+      const now = performance.now();
+      if (now - lastRuntimeErrorAt > 2000) {
+        lastRuntimeErrorAt = now;
+        console.error(`${name} 처리 중 오류를 복구했습니다.`, error);
+        showToast("일시적인 오류를 복구했습니다. 계속 주행할 수 있습니다.");
+      }
+      return false;
+    }
+  }
+
+  canvas.addEventListener("webglcontextlost", event => {
+    event.preventDefault();
+    contextLost = true;
+    clearKeys();
+    showToast("그래픽 장치를 복구하고 있습니다…");
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    contextLost = false;
+    applyQuality($("#quality-setting").value, false);
+    showToast("그래픽이 복구되었습니다.");
+  });
 
   function updateUI(dt) {
-    speedText.textContent = String(Math.round(Math.abs(state.velocity) * 3.6)).padStart(3, "0");
+    speedText.textContent = String(Math.round(state.displayedSpeed * 3.6)).padStart(3, "0");
     fpsFrames += 1;
     fpsElapsed += dt;
     if (fpsElapsed > .45) {
@@ -1963,9 +2007,23 @@
     const dt = Math.min((now - lastTime) / 1000, .05);
     lastTime = now;
     if (started && !paused && !uiOpen) {
-      updateAIVehicles(dt);
-      updatePhysics(dt);
-      updateMoneyPickups(dt);
+      runFrameSystem("AI 차량", () => updateAIVehicles(dt));
+      const physicsUpdated = runFrameSystem("플레이어 물리", () => updatePhysics(dt));
+      if (
+        physicsUpdated &&
+        Number.isFinite(state.position.x) &&
+        Number.isFinite(state.position.y) &&
+        Number.isFinite(state.position.z)
+      ) {
+        lastStablePosition.copy(state.position);
+      } else if (!physicsUpdated) {
+        state.position.copy(lastStablePosition);
+        state.velocity = 0;
+        state.verticalVelocity = 0;
+        state.knockback.set(0, 0);
+        state.displayedSpeed = 0;
+      }
+      runFrameSystem("크레딧", () => updateMoneyPickups(dt));
     }
     if (started) {
       autoSaveElapsed += dt;
@@ -1974,16 +2032,16 @@
         saveGame(false);
       }
     }
-    updateCamera(dt);
-    updateUI(dt);
-    updateTimedMenus();
-    updateAudio();
+    runFrameSystem("카메라", () => updateCamera(dt));
+    runFrameSystem("HUD", () => updateUI(dt));
+    runFrameSystem("시간 메뉴", updateTimedMenus);
+    runFrameSystem("오디오", updateAudio);
     if (previewVisual) previewVisual.root.rotation.y += dt * .28;
     if (drawer.classList.contains("open") && $(".drawer-panel.active")?.dataset.panelContent === "garage") {
       resizePreview();
       previewRenderer.render(previewScene, previewCamera);
     }
-    renderer.render(scene, camera);
+    if (!contextLost) runFrameSystem("3D 렌더링", () => renderer.render(scene, camera));
   }
 
   function onResize() {
