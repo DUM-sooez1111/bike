@@ -146,6 +146,10 @@ kbd, .prompt-key {
 .vehicle-card strong { margin-bottom: 6px; font-size: 13px; }
 .vehicle-card small { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
 .vehicle-card .owned { position: absolute; top: 8px; right: 8px; color: var(--green); font-size: 8px; }
+.vehicle-card .price {
+  position: absolute; top: 7px; right: 8px; padding: 3px 5px; border-radius: 5px;
+  color: #ffd76a; background: rgba(5, 9, 13, .72); font-size: 8px; font-style: normal; font-weight: 800;
+}
 
 .vehicle-preview { display: grid; grid-template-rows: minmax(265px, 1fr) auto; overflow: hidden; border: 1px solid #303a48; border-radius: 18px; background: #111720; }
 .preview-stage { position: relative; min-height: 270px; overflow: hidden; background: radial-gradient(circle at 50% 45%, #344352, #1b222c 52%, #111720 80%); }

@@ -49,13 +49,63 @@
     }
   ];
 
+  // 기존 5개 차종을 기준으로 카테고리마다 50대씩 추가합니다.
+  // 차체는 로우폴리 부품을 재사용하고 색상·성능·가격만 데이터로 생성해 로딩을 가볍게 유지합니다.
+  const VEHICLE_SERIES = [
+    { type: "car", className: "RALLY", prefix: "Trail", words: ["Fox", "Storm", "Ridge", "Dash", "Nomad"], base: { speed: 38, acceleration: 17, braking: 34, handling: 1.72 } },
+    { type: "super", className: "SPORT", prefix: "Apex", words: ["R", "Nova", "Pulse", "Velo", "GT"], base: { speed: 48, acceleration: 21, braking: 39, handling: 1.48 } },
+    { type: "buggy", className: "OFFROAD", prefix: "Dust", words: ["Bug", "Ranger", "Hopper", "Claw", "Dune"], base: { speed: 35, acceleration: 19, braking: 32, handling: 1.95 } },
+    { type: "roadster", className: "CRUISER", prefix: "City", words: ["Glide", "Breeze", "Flow", "Lumen", "Coast"], base: { speed: 41, acceleration: 16, braking: 36, handling: 1.78 } },
+    { type: "bike", className: "BIKE", prefix: "Volt", words: ["Rider", "Spark", "Arrow", "Whirl", "Bolt"], base: { speed: 44, acceleration: 23, braking: 30, handling: 2.08 } }
+  ];
+
+  const scoreFromRange = (value, low, high) =>
+    Math.round(THREE.MathUtils.clamp((value - low) / (high - low) * 70 + 30, 30, 100));
+
+  VEHICLE_SERIES.forEach((series, categoryIndex) => {
+    for (let number = 1; number <= 50; number += 1) {
+      const tier = (number - 1) / 49;
+      const wave = Math.sin(number * 1.73 + categoryIndex) * .5 + .5;
+      const maxSpeed = series.base.speed + tier * 16 + wave * 2.4;
+      const acceleration = series.base.acceleration + tier * 8 + (1 - wave) * 1.7;
+      const braking = series.base.braking + tier * 11 + wave * 2;
+      const handling = series.base.handling + tier * .22 + (wave - .5) * .12;
+      const performance = maxSpeed * 34 + acceleration * 48 + braking * 21 + handling * 620;
+      const price = Math.round((900 + performance * (1.25 + tier * 1.55)) / 50) * 50;
+      const color = new THREE.Color().setHSL((categoryIndex * .19 + number * .047) % 1, .68, .53).getHex();
+      VEHICLES.push({
+        id: `${series.type}-${String(number).padStart(2, "0")}`,
+        name: `${series.prefix} ${series.words[(number - 1) % series.words.length]} ${String(number).padStart(2, "0")}`,
+        type: series.type,
+        className: `${series.className} T${Math.min(5, Math.ceil(number / 10))}`,
+        color,
+        maxSpeed,
+        acceleration,
+        braking,
+        handling,
+        price,
+        generated: true,
+        description: `${series.className} 계열 ${number}번 모델. 등급에 따라 성능과 가격이 함께 상승합니다.`,
+        scores: {
+          "최고속도": scoreFromRange(maxSpeed, 32, 66),
+          "가속력": scoreFromRange(acceleration, 14, 33),
+          "제동력": scoreFromRange(braking, 28, 50),
+          "핸들링": scoreFromRange(handling, 1.35, 2.4)
+        }
+      });
+    }
+  });
+
   const DESTINATIONS = [
     { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
     { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 100, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 레이싱 트랙", copy: "빠른 속도를 시험하는 타원형 서킷", icon: "🏎️", x: 73, z: 3, heading: Math.PI / 2, unlockMinutes: 13 },
-    { name: "북쪽 장애물 코스", copy: "벽과 콘을 피하는 고급 주행 구역", icon: "🚧", x: -22, z: 105, heading: Math.PI, unlockMinutes: 28 },
+    { name: "북서쪽 장애물 코스", copy: "도로와 분리된 벽·콘 연습 구역", icon: "🚧", x: -155, z: 62, heading: 0, unlockMinutes: 28 },
     { name: "서쪽 바람 평원", copy: "긴 흙길과 대형 점프대가 있는 외곽 초원", icon: "🌬️", x: -270, z: 42, heading: -Math.PI / 2, unlockMinutes: 18 },
-    { name: "남쪽 소나무 숲", copy: "코인과 바위가 흩어진 깊은 숲길", icon: "🌲", x: 68, z: -292, heading: 0, unlockMinutes: 43 }
+    { name: "남쪽 소나무 숲", copy: "코인과 바위가 흩어진 깊은 숲길", icon: "🌲", x: 68, z: -292, heading: 0, unlockMinutes: 43 },
+    { name: "푸른 호수 전망대", copy: "서남쪽 호수와 언덕을 둘러보는 장소", icon: "🏞️", x: -258, z: -138, heading: Math.PI, unlockMinutes: 0 },
+    { name: "큰강 다리", copy: "강을 안전하게 건너는 중앙 다리", icon: "🌉", x: 85, z: 176, heading: 0, unlockMinutes: 0 },
+    { name: "동쪽 고원", copy: "넓은 맵을 내려다보는 주행 가능한 언덕", icon: "⛰️", x: 246, z: -125, heading: 0, unlockMinutes: 0 }
   ];
 
   const PAINTS = [
@@ -211,6 +261,8 @@
   scene.add(world);
   const colliders = [];
   const ramps = [];
+  const terrainSurfaces = [];
+  const waterZones = [];
 
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30), MAT.grass);
   ground.rotation.x = -Math.PI / 2;
@@ -234,8 +286,13 @@
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     world.add(mesh);
-    if (collision && Math.abs(rotationY) < .001) {
-      colliders.push({ minX: x - width / 2, maxX: x + width / 2, minZ: z - depth / 2, maxZ: z + depth / 2 });
+    if (collision) {
+      // 회전된 상자도 빠지지 않도록 월드 기준 AABB를 계산합니다.
+      const c = Math.abs(Math.cos(rotationY));
+      const s = Math.abs(Math.sin(rotationY));
+      const extentX = (width * c + depth * s) / 2;
+      const extentZ = (width * s + depth * c) / 2;
+      colliders.push({ minX: x - extentX, maxX: x + extentX, minZ: z - extentZ, maxZ: z + extentZ, maxY: y + height / 2 });
     }
     return mesh;
   }
@@ -258,6 +315,19 @@
     const segment = addBox((x + nx) / 2, .035, (z + nz) / 2, 8.2, .07, Math.hypot(nx - x, nz - z) + .8, MAT.road, Math.atan2(nx - x, nz - z), false);
     segment.receiveShadow = true;
     if (i % 3 === 0) addBox(x, .09, z, .18, .08, 2.3, MAT.roadEdge, Math.atan2(nx - x, nz - z), false);
+  }
+
+  function isDriveLane(x, z, clearance = 0) {
+    const ellipse = Math.sqrt(
+      ((x - trackCenter.x) / 48) ** 2 +
+      ((z - trackCenter.z) / 31) ** 2
+    );
+    const onTrack = ellipse > .78 - clearance * .012 && ellipse < 1.24 + clearance * .012;
+    const onWestRoad = x > -304 && x < -132 && Math.abs(z - 42) < 7 + clearance;
+    const onSouthRoad = z > -304 && z < -132 && Math.abs(x - 68) < 7 + clearance;
+    const onBridge = x > 74 - clearance && x < 96 + clearance && z > 180 && z < 230;
+    const atSpawn = Math.hypot(x, z + 12) < 11 + clearance;
+    return onTrack || onWestRoad || onSouthRoad || onBridge || atSpawn;
   }
 
   // 물리 계산과 정확히 같은 방향을 가진 쐐기형 점프대
@@ -296,15 +366,15 @@
   addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
   addBox(68, .025, -218, 10, .05, 150, MAT.dirt, 0, false);
 
-  // 컨테이너, 콘, 낮은 벽 등 충돌 장애물
+  // 도로와 트랙을 막지 않는 북서쪽 전용 장애물 연습 구역
   [
-    [-25, 1.6, -28, 9, 3.2, 3, MAT.concrete],
-    [20, 1.3, -48, 4, 2.6, 13, MAT.orange],
-    [35, 1.8, 24, 11, 3.6, 3, MAT.concrete],
-    [-42, 2, 38, 4, 4, 13, MAT.yellow],
-    [10, 2.5, 66, 5.5, 5, 5.5, MAT.concreteDark],
-    [-71, 1.5, -6, 10, 3, 4, MAT.concrete],
-    [3, 1.1, 103, 18, 2.2, 3, MAT.concrete]
+    [-145, 1.6, 78, 9, 3.2, 3, MAT.concrete],
+    [-166, 1.3, 96, 4, 2.6, 13, MAT.orange],
+    [-127, 1.8, 118, 11, 3.6, 3, MAT.concrete],
+    [-184, 2, 126, 4, 4, 13, MAT.yellow],
+    [-151, 2.5, 146, 5.5, 5, 5.5, MAT.concreteDark],
+    [-205, 1.5, 88, 10, 3, 4, MAT.concrete],
+    [-116, 1.1, 151, 18, 2.2, 3, MAT.concrete]
   ].forEach(args => addBox(...args));
 
   function addCone(x, z) {
@@ -317,10 +387,83 @@
     group.add(body, base);
     group.position.set(x, 0, z);
     world.add(group);
+    colliders.push({ minX: x - .48, maxX: x + .48, minZ: z - .48, maxZ: z + .48, maxY: 1.3 });
   }
-  for (let z = -14; z <= 42; z += 8) addCone(12 + (Math.round(z / 8) % 2 ? -5 : 5), z);
+  for (let z = 76; z <= 148; z += 9) addCone(-155 + (Math.round(z / 9) % 2 ? -9 : 9), z);
+
+  // 캔버스로 만든 경고 이미지라서 별도 이미지 파일이나 인터넷 연결이 필요 없습니다.
+  function addObstacleSign(x, z, rotationY = 0) {
+    const signCanvas = document.createElement("canvas");
+    signCanvas.width = 256;
+    signCanvas.height = 160;
+    const ctx = signCanvas.getContext("2d");
+    ctx.fillStyle = "#f6c247";
+    ctx.fillRect(0, 0, 256, 160);
+    ctx.fillStyle = "#171d20";
+    ctx.fillRect(0, 0, 256, 16);
+    ctx.fillRect(0, 144, 256, 16);
+    ctx.font = "bold 74px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("⚠", 128, 84);
+    ctx.font = "bold 27px sans-serif";
+    ctx.fillText("장애물 구역", 128, 128);
+    const signMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas), side: THREE.DoubleSide });
+    const group = new THREE.Group();
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 3), signMaterial);
+    board.position.y = 3.6;
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(.28, 3.8, .28), MAT.dark);
+    pole.position.y = 1.9;
+    group.add(board, pole);
+    group.position.set(x, 0, z);
+    group.rotation.y = rotationY;
+    world.add(group);
+    colliders.push({ minX: x - .45, maxX: x + .45, minZ: z - .45, maxZ: z + .45, maxY: 5.1 });
+  }
+  addObstacleSign(-133, 66, Math.PI);
+  addObstacleSign(-194, 156, 0);
+
+  // 여러 지형: 운전 가능한 언덕, 호수, 강, 그리고 강을 건너는 다리
+  function addHill(x, z, radius, height, material = MAT.grassDark) {
+    const hill = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 10, 4), material);
+    hill.position.set(x, height / 2 - .05, z);
+    hill.rotation.y = Math.PI / 10;
+    hill.castShadow = true;
+    hill.receiveShadow = true;
+    world.add(hill);
+    terrainSurfaces.push({ type: "hill", x, z, radius, height });
+  }
+  addHill(-282, -52, 37, 17);
+  addHill(246, -82, 48, 24, MAT.grassLight);
+  addHill(275, 135, 31, 14);
+  addHill(-212, 258, 42, 20, MAT.grassDark);
+
+  const waterMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .82, flatShading: true
+  });
+  const lake = new THREE.Mesh(new THREE.CircleGeometry(44, 20), waterMaterial);
+  lake.rotation.x = -Math.PI / 2;
+  lake.position.set(-258, .08, -185);
+  lake.scale.set(1.3, .78, 1);
+  lake.receiveShadow = true;
+  world.add(lake);
+  waterZones.push({ type: "ellipse", x: -258, z: -185, radiusX: 57, radiusZ: 34 });
+
+  // 강은 다리 폭만 비워 두 구간으로 나눕니다.
+  addBox(-141, .07, 205, 438, .12, 25, waterMaterial, 0, false);
+  addBox(272, .07, 205, 220, .12, 25, waterMaterial, 0, false);
+  waterZones.push(
+    { type: "box", minX: -360, maxX: 78, minZ: 192.5, maxZ: 217.5 },
+    { type: "box", minX: 92, maxX: 382, minZ: 192.5, maxZ: 217.5 }
+  );
+
+  // 다리 상판은 주행 표면이고 양쪽 난간만 충돌합니다.
+  addBox(85, .72, 205, 14, 1.35, 36, MAT.concrete, 0, false);
+  addBox(78.5, 1.65, 205, .55, 2.2, 36, MAT.yellow);
+  addBox(91.5, 1.65, 205, .55, 2.2, 36, MAT.yellow);
+  terrainSurfaces.push({ type: "box", minX: 78, maxX: 92, minZ: 187, maxZ: 223, height: 1.4 });
 
   function addTree(x, z, scale = 1) {
+    if (isDriveLane(x, z, 2.5 * scale)) return null;
     const group = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.35, .52, 3.3, 6), MAT.trunk);
     trunk.position.y = 1.65;
@@ -335,6 +478,9 @@
     group.position.set(x, 0, z);
     group.scale.setScalar(scale);
     world.add(group);
+    const trunkRadius = .62 * scale;
+    colliders.push({ minX: x - trunkRadius, maxX: x + trunkRadius, minZ: z - trunkRadius, maxZ: z + trunkRadius, maxY: 5.6 * scale });
+    return group;
   }
 
   [
@@ -369,34 +515,49 @@
   for (let i = 0; i < 28; i += 1) {
     const angle = i / 28 * Math.PI * 2;
     const radius = 96 + Math.random() * 30;
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.7 + Math.random() * 1.5, 0), MAT.rock);
-    rock.position.set(Math.cos(angle) * radius, .65, Math.sin(angle) * radius);
+    const rockX = Math.cos(angle) * radius;
+    const rockZ = Math.sin(angle) * radius;
+    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    const rockRadius = .7 + Math.random() * 1.5;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
+    rock.position.set(rockX, .65, rockZ);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     rock.scale.y = .55 + Math.random() * .5;
     rock.castShadow = true;
     world.add(rock);
+    colliders.push({ minX: rock.position.x - rockRadius, maxX: rock.position.x + rockRadius, minZ: rock.position.z - rockRadius, maxZ: rock.position.z + rockRadius, maxY: rockRadius * 1.5 });
   }
 
   for (let i = 0; i < 38; i += 1) {
     const angle = i / 38 * Math.PI * 2;
     const radius = 155 + Math.random() * 68;
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.6 + Math.random() * 1.35, 0), MAT.rock);
-    rock.position.set(Math.cos(angle) * radius, .58, Math.sin(angle) * radius);
+    const rockX = Math.cos(angle) * radius;
+    const rockZ = Math.sin(angle) * radius;
+    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    const rockRadius = .6 + Math.random() * 1.35;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
+    rock.position.set(rockX, .58, rockZ);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     rock.scale.y = .5 + Math.random() * .55;
     rock.castShadow = true;
     world.add(rock);
+    colliders.push({ minX: rock.position.x - rockRadius, maxX: rock.position.x + rockRadius, minZ: rock.position.z - rockRadius, maxZ: rock.position.z + rockRadius, maxY: rockRadius * 1.5 });
   }
 
   for (let i = 0; i < 64; i += 1) {
     const angle = i / 64 * Math.PI * 2 + Math.random() * .06;
     const radius = 245 + Math.random() * 125;
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(.55 + Math.random() * 1.45, 0), MAT.rock);
-    rock.position.set(Math.cos(angle) * radius, .55, Math.sin(angle) * radius);
+    const rockX = Math.cos(angle) * radius;
+    const rockZ = Math.sin(angle) * radius;
+    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    const rockRadius = .55 + Math.random() * 1.45;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
+    rock.position.set(rockX, .55, rockZ);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     rock.scale.y = .48 + Math.random() * .58;
     rock.castShadow = true;
     world.add(rock);
+    colliders.push({ minX: rock.position.x - rockRadius, maxX: rock.position.x + rockRadius, minZ: rock.position.z - rockRadius, maxZ: rock.position.z + rockRadius, maxY: rockRadius * 1.5 });
   }
 
   // 맵 경계 밖 배경 산
@@ -636,8 +797,15 @@
     return { root, body, wheels, frontPivots };
   }
 
+  const ownedVehicleIds = new Set(VEHICLES.filter(vehicleData => !vehicleData.generated).map(vehicleData => vehicleData.id));
+  if (Array.isArray(savedGame.ownedVehicles)) {
+    savedGame.ownedVehicles
+      .filter(id => VEHICLES.some(vehicleData => vehicleData.id === id))
+      .forEach(id => ownedVehicleIds.add(id));
+  }
   const savedVehicleIndex = Number(savedGame.selectedVehicle);
-  let selectedIndex = Number.isInteger(savedVehicleIndex) && VEHICLES[savedVehicleIndex] ? savedVehicleIndex : 0;
+  let selectedIndex = Number.isInteger(savedVehicleIndex) && VEHICLES[savedVehicleIndex] &&
+    ownedVehicleIds.has(VEHICLES[savedVehicleIndex].id) ? savedVehicleIndex : 0;
   let previewIndex = selectedIndex;
   let selectedPaint = VEHICLES[selectedIndex].color;
   const equipped = new Set();
@@ -785,7 +953,7 @@
         const dx = ai.root.position.x - closestX;
         const dz = ai.root.position.z - closestZ;
         const distance = Math.hypot(dx, dz);
-        if (distance < radius && ai.root.position.y < 3.2) {
+        if (distance < radius && ai.root.position.y < (box.maxY ?? 3.2) + .55) {
           if (ai.collisionCooldown <= 0) applyAIBounce(ai, dx, dz, ai.speed);
           const push = Math.max(.08, radius - distance + .08);
           const normalLength = Math.max(distance, .001);
@@ -795,6 +963,17 @@
           ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
           break;
         }
+      }
+      for (const zone of waterZones) {
+        const normal = waterCollisionNormal(zone, ai.root.position);
+        if (!normal || ai.root.position.y >= 3.2) continue;
+        if (ai.collisionCooldown <= 0) applyAIBounce(ai, normal.x, normal.z, ai.speed);
+        ai.knockbackOffset.x += normal.x * .8;
+        ai.knockbackOffset.y += normal.z * .8;
+        ai.root.position.x = ai.pathPosition.x + ai.knockbackOffset.x;
+        ai.root.position.z = ai.pathPosition.z + ai.knockbackOffset.y;
+        chooseRandomAITarget(ai);
+        break;
       }
     });
 
@@ -962,6 +1141,27 @@
         return { height: progress * ramp.height, pitch: -Math.atan2(ramp.height, ramp.length), ramp, progress };
       }
     }
+    for (const terrain of terrainSurfaces) {
+      if (terrain.type === "box") {
+        if (
+          position.x >= terrain.minX - margin && position.x <= terrain.maxX + margin &&
+          position.z >= terrain.minZ - margin && position.z <= terrain.maxZ + margin
+        ) return { height: terrain.height, pitch: 0, ramp: null, progress: 0 };
+      } else if (terrain.type === "hill") {
+        const dx = position.x - terrain.x;
+        const dz = position.z - terrain.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance <= terrain.radius + margin) {
+          const progress = THREE.MathUtils.clamp(1 - distance / terrain.radius, 0, 1);
+          return {
+            height: terrain.height * progress,
+            pitch: distance > .01 ? Math.atan2(terrain.height, terrain.radius) * (dz / distance) : 0,
+            ramp: null,
+            progress
+          };
+        }
+      }
+    }
     return { height: 0, pitch: 0, ramp: null, progress: 0 };
   }
 
@@ -1003,6 +1203,27 @@
     state.roll += THREE.MathUtils.clamp(sideImpact * impactSpeed * .012, -.18, .18);
   }
 
+  function waterCollisionNormal(zone, position) {
+    if (zone.type === "ellipse") {
+      const nx = (position.x - zone.x) / zone.radiusX;
+      const nz = (position.z - zone.z) / zone.radiusZ;
+      if (nx * nx + nz * nz >= 1) return null;
+      return { x: nx / zone.radiusX, z: nz / zone.radiusZ };
+    }
+    if (
+      position.x < zone.minX || position.x > zone.maxX ||
+      position.z < zone.minZ || position.z > zone.maxZ
+    ) return null;
+    const edges = [
+      { distance: position.x - zone.minX, x: -1, z: 0 },
+      { distance: zone.maxX - position.x, x: 1, z: 0 },
+      { distance: position.z - zone.minZ, x: 0, z: -1 },
+      { distance: zone.maxZ - position.z, x: 0, z: 1 }
+    ];
+    edges.sort((a, b) => a.distance - b.distance);
+    return edges[0];
+  }
+
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
@@ -1010,7 +1231,7 @@
       const z = THREE.MathUtils.clamp(state.position.z, box.minZ, box.maxZ);
       const dx = state.position.x - x;
       const dz = state.position.z - z;
-      if (dx * dx + dz * dz < radius * radius && state.position.y < 3.2) {
+      if (dx * dx + dz * dz < radius * radius && state.position.y < (box.maxY ?? 3.2) + .55) {
         if (state.collisionCooldown <= 0) applyCollisionBounce(dx, dz, previous);
         else {
           state.position.x = previous.x;
@@ -1018,6 +1239,13 @@
         }
         return;
       }
+    }
+    for (const zone of waterZones) {
+      const normal = waterCollisionNormal(zone, state.position);
+      if (!normal || state.position.y >= 3.2) continue;
+      if (state.collisionCooldown <= 0) applyCollisionBounce(normal.x, normal.z, previous);
+      else state.position.copy(previous);
+      return;
     }
     for (const ai of aiVehicles) {
       const aiRadius = ai.definition.type === "bike" ? .9 : 1.45;
@@ -1303,7 +1531,9 @@
         aria-selected="${index === previewIndex}" data-vehicle="${index}" style="--vehicle-color:#${vehicleData.color.toString(16).padStart(6,"0")}">
         <span class="vehicle-thumb ${vehicleData.type === "bike" ? "bike" : ""}"></span>
         <span><strong>${vehicleData.name}</strong><small>${vehicleData.className} · ${Math.round(vehicleData.maxSpeed * 3.6)} KM/H</small></span>
-        <em class="owned">AVAILABLE</em>
+        <em class="${ownedVehicleIds.has(vehicleData.id) ? "owned" : "price"}">
+          ${ownedVehicleIds.has(vehicleData.id) ? "보유중" : `💰 ${vehicleData.price.toLocaleString("ko-KR")}`}
+        </em>
       </button>`).join("");
     $$(".vehicle-card").forEach(card => card.addEventListener("click", () => {
       previewIndex = Number(card.dataset.vehicle);
@@ -1320,7 +1550,12 @@
     $("#vehicle-description").textContent = def.description;
     $("#vehicle-stats").innerHTML = Object.entries(def.scores).map(([name, score]) => `
       <div class="stat-row"><span>${name}</span><i style="--score:${score}%"></i><b>${score}</b></div>`).join("");
-    $("#select-vehicle").innerHTML = previewIndex === selectedIndex ? `현재 선택됨 <span>✓</span>` : `이 차량 선택 <span>→</span>`;
+    const owned = ownedVehicleIds.has(def.id);
+    $("#select-vehicle").innerHTML = previewIndex === selectedIndex
+      ? `현재 선택됨 <span>✓</span>`
+      : owned
+        ? `이 차량 선택 <span>→</span>`
+        : `💰 ${def.price.toLocaleString("ko-KR")}에 구매 <span>→</span>`;
     rebuildPreview();
   }
 
@@ -1404,6 +1639,17 @@
   $(".drawer-backdrop").addEventListener("click", closeDrawer);
 
   $("#select-vehicle").addEventListener("click", () => {
+    const nextVehicle = VEHICLES[previewIndex];
+    if (!ownedVehicleIds.has(nextVehicle.id)) {
+      if (credits < nextVehicle.price) {
+        showToast(`크레딧이 ${(nextVehicle.price - credits).toLocaleString("ko-KR")} 부족합니다.`);
+        return;
+      }
+      credits -= nextVehicle.price;
+      ownedVehicleIds.add(nextVehicle.id);
+      updateMoneyDisplay();
+      showToast(`${nextVehicle.name} 차량을 구매했습니다.`);
+    }
     selectedIndex = previewIndex;
     selectedPaint = VEHICLES[selectedIndex].color;
     saveCustomization();
@@ -1441,6 +1687,7 @@
         version: 1,
         savedAt: Date.now(),
         selectedVehicle: selectedIndex,
+        ownedVehicles: [...ownedVehicleIds],
         paint: selectedPaint,
         accessories: [...equipped],
         credits: Math.floor(credits),
