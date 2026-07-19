@@ -324,21 +324,25 @@
   const terrainSurfaces = [];
   const waterZones = [];
   const roadSegments = [];
-  const WATER_LEVEL = .78;
+  const WATER_LEVEL = .18;
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30), MAT.grass);
+  // 물가를 실제로 파낼 수 있도록 지면을 촘촘한 격자로 만듭니다.
+  const groundGeometry = new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30, 220, 220);
+  const ground = new THREE.Mesh(groundGeometry, MAT.grass);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   world.add(ground);
 
   // 잔디의 단조로움을 깨는 큰 다각형 패치
   const patchGeo = new THREE.CircleGeometry(1, 7);
+  const groundPatches = [];
   for (let i = 0; i < 560; i += 1) {
     const patch = new THREE.Mesh(patchGeo, i % 5 === 0 ? MAT.dirt : (i % 2 ? MAT.grassLight : MAT.grassDark));
     patch.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI);
     patch.position.set((Math.random() - .5) * (WORLD_SIZE - 24), .008, (Math.random() - .5) * (WORLD_SIZE - 24));
     patch.scale.set(3 + Math.random() * 7, 1.5 + Math.random() * 3.5, 1);
     world.add(patch);
+    groundPatches.push(patch);
   }
 
   function addBox(x, y, z, width, height, depth, material, rotationY = 0, collision = true) {
@@ -570,6 +574,12 @@
     color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .66,
     depthWrite: false, side: THREE.DoubleSide, flatShading: true
   });
+  const lakeShore = new THREE.Mesh(new THREE.RingGeometry(44, 49, 24), MAT.dirt);
+  lakeShore.rotation.x = -Math.PI / 2;
+  lakeShore.position.set(-258, .025, -185);
+  lakeShore.scale.set(1.3, .78, 1);
+  lakeShore.receiveShadow = true;
+  world.add(lakeShore);
   const lake = new THREE.Mesh(new THREE.CircleGeometry(44, 20), waterMaterial);
   lake.rotation.x = -Math.PI / 2;
   lake.position.set(-258, WATER_LEVEL, -185);
@@ -635,8 +645,6 @@
   for (let index = 0; index < riverSamples.length - 1; index += 1) {
     const a = riverSamples[index];
     const b = riverSamples[index + 1];
-    const middleX = (a.x + b.x) / 2;
-    if (middleX > 50 && middleX < 122) continue;
     waterZones.push({
       type: "capsule",
       ax: a.x, az: a.z,
@@ -645,6 +653,69 @@
       waterLevel: WATER_LEVEL - .05
     });
   }
+
+  function waterDepthAt(x, z) {
+    let depth = 0;
+    for (const zone of waterZones) {
+      let normalizedDistance = 2;
+      let maxDepth = 0;
+      if (zone.type === "ellipse") {
+        normalizedDistance = Math.hypot(
+          (x - zone.x) / zone.radiusX,
+          (z - zone.z) / zone.radiusZ
+        );
+        maxDepth = 3.8;
+      } else if (zone.type === "capsule") {
+        const segmentX = zone.bx - zone.ax;
+        const segmentZ = zone.bz - zone.az;
+        const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+        const projection = lengthSquared > .001
+          ? ((x - zone.ax) * segmentX + (z - zone.az) * segmentZ) / lengthSquared
+          : 0;
+        const t = THREE.MathUtils.clamp(projection, 0, 1);
+        const closestX = zone.ax + segmentX * t;
+        const closestZ = zone.az + segmentZ * t;
+        normalizedDistance = Math.hypot(x - closestX, z - closestZ) / zone.radius;
+        maxDepth = 2.35;
+      }
+      if (normalizedDistance >= 1) continue;
+      const shoreStart = zone.type === "ellipse" ? .7 : .52;
+      const progress = THREE.MathUtils.clamp((1 - normalizedDistance) / (1 - shoreStart), 0, 1);
+      const smoothProgress = progress * progress * (3 - 2 * progress);
+      depth = Math.max(depth, maxDepth * smoothProgress);
+    }
+    return depth;
+  }
+
+  function getWaterBedInfo(position) {
+    const depth = waterDepthAt(position.x, position.z);
+    if (depth <= .001) return null;
+    const sample = .55;
+    const heightX1 = -waterDepthAt(position.x + sample, position.z);
+    const heightX0 = -waterDepthAt(position.x - sample, position.z);
+    const heightZ1 = -waterDepthAt(position.x, position.z + sample);
+    const heightZ0 = -waterDepthAt(position.x, position.z - sample);
+    return {
+      height: -depth,
+      pitch: 0,
+      gradientX: (heightX1 - heightX0) / (sample * 2),
+      gradientZ: (heightZ1 - heightZ0) / (sample * 2),
+      ramp: null,
+      terrain: null,
+      progress: depth,
+      water: true
+    };
+  }
+
+  // 지면 버텍스를 수중 바닥 높이까지 내려 호수와 강의 분지를 실제로 만듭니다.
+  const groundPositions = groundGeometry.attributes.position;
+  for (let index = 0; index < groundPositions.count; index += 1) {
+    const worldX = groundPositions.getX(index);
+    const worldZ = -groundPositions.getY(index);
+    groundPositions.setZ(index, -waterDepthAt(worldX, worldZ));
+  }
+  groundPositions.needsUpdate = true;
+  groundGeometry.computeVertexNormals();
 
   function addBridgeApproach(z, rotationY) {
     const width = 14;
@@ -695,6 +766,10 @@
       );
     });
   }
+
+  groundPatches.forEach(patch => {
+    if (overlapsWater(patch.position.x, patch.position.z, 1.5)) world.remove(patch);
+  });
 
   function addTree(x, z, scale = 1) {
     if (
@@ -1684,6 +1759,8 @@
         }
       }
     }
+    const waterBed = getWaterBedInfo(position);
+    if (waterBed) return waterBed;
     return { height: 0, pitch: 0, ramp: null, terrain: null, progress: 0 };
   }
 
@@ -1989,6 +2066,7 @@
     vehicleVisual.body.rotation.z = state.roll;
     // 회전 중심 때문에 뒷바퀴가 지면 아래로 내려가지 않도록 차체를 함께 들어 줍니다.
     vehicleVisual.body.position.y = Math.sin(state.wheelie) * (spec.type === "bike" ? 1.48 : 1.35);
+    blobShadow.visible = !state.inWater;
     blobShadow.position.set(state.position.x, .025, state.position.z);
     blobShadow.material.opacity = THREE.MathUtils.clamp(.48 - state.position.y * .045, .08, .48);
     blobShadow.scale.setScalar(1 + state.position.y * .035);
