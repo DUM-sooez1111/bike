@@ -135,13 +135,34 @@ kbd, .prompt-key {
 .vehicle-card:hover { border-color: #526174; transform: translateX(2px); }
 .vehicle-card.selected { border-color: #2f9fc2; background: linear-gradient(100deg, #1d2b36, #1b222c); }
 .vehicle-card.selected::before { background: var(--cyan); }
-.vehicle-thumb { position: relative; height: 60px; border-radius: 9px; background: radial-gradient(circle at 60% 30%, #3d4d5f, #202834 65%); }
+.vehicle-thumb { position: relative; height: 60px; overflow: hidden; border-radius: 9px; background: radial-gradient(circle at 60% 30%, #3d4d5f, #202834 65%); }
 .vehicle-thumb::before {
-  content: ""; position: absolute; left: 10px; right: 10px; bottom: 17px; height: 17px;
-  border-radius: 8px 14px 5px 5px; background: var(--vehicle-color);
-  box-shadow: -3px 10px 0 -4px #080b0e, 25px 10px 0 -4px #080b0e;
+  content: ""; position: absolute; width: var(--thumb-width); height: var(--thumb-height);
+  left: 50%; bottom: 17px; transform: translateX(-50%) skewX(var(--thumb-skew));
+  border-radius: var(--thumb-corner) calc(var(--thumb-corner) + 5px) 4px 4px; background: var(--vehicle-color);
+  border-bottom: 4px solid var(--vehicle-accent);
+  box-shadow: -16px 11px 0 -6px #080b0e, 16px 11px 0 -6px #080b0e;
 }
-.vehicle-thumb.bike::before { left: 27px; right: 27px; height: 23px; border-radius: 4px; }
+.vehicle-thumb::after {
+  content: ""; position: absolute; width: calc(var(--thumb-width) * .52); height: calc(var(--thumb-height) * .72);
+  left: 50%; bottom: calc(17px + var(--thumb-height) - 3px); transform: translateX(-50%) skewX(calc(var(--thumb-skew) * -.55));
+  border-radius: 7px 10px 2px 2px; background: linear-gradient(105deg, var(--vehicle-accent) 0 22%, #a9c5d0 23% 72%, var(--vehicle-color) 73%);
+}
+.vehicle-thumb.type-super::before { border-radius: 12px 18px 3px 3px; }
+.vehicle-thumb.type-buggy::after { background: repeating-linear-gradient(90deg, #111a20 0 3px, var(--vehicle-accent) 3px 5px); border-radius: 3px; }
+.vehicle-thumb.type-roadster::after { height: calc(var(--thumb-height) * .38); border-radius: 12px 12px 2px 2px; }
+.vehicle-thumb.type-bike::before {
+  width: calc(var(--thumb-width) * .48); height: calc(var(--thumb-height) * 1.2); bottom: 16px;
+  border-radius: 50% 12px 5px 5px; border-bottom-width: 3px;
+  box-shadow: -15px 13px 0 -7px #080b0e, 15px 13px 0 -7px #080b0e;
+}
+.vehicle-thumb.type-bike::after {
+  width: calc(var(--thumb-width) * .22); height: calc(var(--thumb-height) * .75);
+  bottom: calc(16px + var(--thumb-height)); border-radius: 50% 50% 3px 3px;
+}
+.vehicle-thumb.variant-1::after, .vehicle-thumb.variant-5::after { transform: translateX(-43%) skewX(calc(var(--thumb-skew) * -.55)); }
+.vehicle-thumb.variant-2::before, .vehicle-thumb.variant-6::before { border-top: 3px solid rgba(255,255,255,.5); }
+.vehicle-thumb.variant-3::after, .vehicle-thumb.variant-7::after { background-color: var(--vehicle-accent); filter: saturate(1.25); }
 .vehicle-card strong, .vehicle-card small { display: block; }
 .vehicle-card strong { margin-bottom: 6px; font-size: 13px; }
 .vehicle-card small { color: var(--muted); font-size: 9px; letter-spacing: .08em; }

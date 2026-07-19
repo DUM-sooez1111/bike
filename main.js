@@ -104,6 +104,51 @@
       a.vehicleData.name.localeCompare(b.vehicleData.name)
     );
 
+  // 차량 ID로 고유한 외형 값을 만듭니다. 같은 차량은 재실행 후에도 같은 모습입니다.
+  function getVehicleVisualSpec(definition) {
+    let hash = 2166136261;
+    for (const character of definition.id) {
+      hash ^= character.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    hash >>>= 0;
+    const unit = shift => ((hash >>> shift) & 255) / 255;
+    const accentColor = new THREE.Color(definition.color);
+    accentColor.offsetHSL(.12 + unit(8) * .34, .05, unit(16) > .5 ? .13 : -.15);
+    return {
+      hash,
+      variant: hash % 8,
+      feature: (hash >>> 5) % 6,
+      accent: accentColor.getHex(),
+      widthScale: .9 + unit(0) * .22,
+      lengthScale: .9 + unit(8) * .22,
+      heightScale: .88 + unit(16) * .25,
+      wheelScale: .9 + unit(24) * .2,
+      cabinShift: (unit(4) - .5) * .42,
+      thumbWidth: 42 + Math.round(unit(0) * 13),
+      thumbHeight: 14 + Math.round(unit(16) * 8),
+      thumbSkew: -7 + Math.round(unit(8) * 14),
+      corner: 3 + Math.round(unit(24) * 10)
+    };
+  }
+
+  function getGarageCardStyle(definition) {
+    const visual = getVehicleVisualSpec(definition);
+    return [
+      `--vehicle-color:#${definition.color.toString(16).padStart(6, "0")}`,
+      `--vehicle-accent:#${visual.accent.toString(16).padStart(6, "0")}`,
+      `--thumb-width:${visual.thumbWidth}px`,
+      `--thumb-height:${visual.thumbHeight}px`,
+      `--thumb-skew:${visual.thumbSkew}deg`,
+      `--thumb-corner:${visual.corner}px`
+    ].join(";");
+  }
+
+  function getGarageThumbClass(definition) {
+    const visual = getVehicleVisualSpec(definition);
+    return `type-${definition.type} variant-${visual.variant}`;
+  }
+
   const DESTINATIONS = [
     { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
     { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 100, heading: Math.PI, unlockMinutes: 0 },
@@ -763,9 +808,11 @@
     const root = new THREE.Group();
     const body = new THREE.Group();
     const isBike = definition.type === "bike";
+    const visual = getVehicleVisualSpec(definition);
     root.add(body);
     const paint = flatMaterial(paintHex, .55, .08);
     const paintDark = flatMaterial(new THREE.Color(paintHex).multiplyScalar(.68), .65, .06);
+    const accent = flatMaterial(visual.accent, .5, .1);
     const wheels = [];
     const frontPivots = [];
 
@@ -785,53 +832,80 @@
     }
 
     if (definition.type === "bike") {
-      wheel(0, .76, 1.62, .72, true, .32);
-      wheel(0, .76, -1.48, .72, false, .32);
-      const frame = makeMesh(new THREE.BoxGeometry(.34, .34, 2.25), paint, 0, 1.08, .05, body);
+      const bikeLength = visual.lengthScale;
+      const bikeWheel = .72 * visual.wheelScale;
+      wheel(0, bikeWheel + .04, 1.62 * bikeLength, bikeWheel, true, .28 + visual.widthScale * .04);
+      wheel(0, bikeWheel + .04, -1.48 * bikeLength, bikeWheel, false, .28 + visual.widthScale * .04);
+      const frame = makeMesh(new THREE.BoxGeometry(.3 + visual.widthScale * .05, .34, 2.25 * bikeLength), paint, 0, 1.08, .05, body);
       frame.rotation.x = -.08;
-      makeMesh(new THREE.BoxGeometry(.58, .42, 1.05), paint, 0, 1.35, -.35, body);
-      const tank = makeMesh(new THREE.SphereGeometry(.52, 8, 6), paint, 0, 1.58, .38, body);
-      tank.scale.set(.78, .72, 1.2);
-      makeMesh(new THREE.BoxGeometry(.48, .18, .75), MAT.dark, 0, 1.58, -.75, body);
+      makeMesh(new THREE.BoxGeometry(.48 + visual.widthScale * .1, .36 + visual.heightScale * .06, .86 + visual.lengthScale * .2), paint, 0, 1.35, -.35, body);
+      const tank = makeMesh(new THREE.SphereGeometry(.48 + visual.heightScale * .04, 8, 6), paint, 0, 1.58, .38 + visual.cabinShift * .25, body);
+      tank.scale.set(.68 + visual.widthScale * .1, .62 + visual.heightScale * .1, 1.02 + visual.lengthScale * .18);
+      makeMesh(new THREE.BoxGeometry(.42 + visual.widthScale * .06, .16 + visual.heightScale * .03, .65 + visual.lengthScale * .12), MAT.dark, 0, 1.58, -.75, body);
       const fork = makeMesh(new THREE.BoxGeometry(.12, 1.15, .12), MAT.rim, 0, 1.25, 1.35, body);
       fork.rotation.x = -.22;
       makeMesh(new THREE.BoxGeometry(1.12, .1, .12), MAT.dark, 0, 1.85, 1.28, body);
       makeMesh(new THREE.BoxGeometry(.18, .7, .15), MAT.dark, 0, 2.02, -.25, body);
       makeMesh(new THREE.SphereGeometry(.26, 8, 6), MAT.dark, 0, 2.43, -.22, body);
       makeMesh(new THREE.BoxGeometry(.42, .18, .22), MAT.white, 0, 1.75, 1.72, body);
+      if (visual.feature % 2 === 0) {
+        const fairing = makeMesh(new THREE.BoxGeometry(.72, .62, .18), accent, 0, 1.52, .96, body);
+        fairing.rotation.x = -.2;
+      }
+      if (visual.feature % 3 === 0) makeMesh(new THREE.BoxGeometry(.5, .1, .9), accent, 0, 1.08, -1.02, body);
+      if (visual.feature >= 3) {
+        const exhaust = makeMesh(new THREE.CylinderGeometry(.09, .13, 1.05, 7), MAT.rim, -.31, 1.03, -.68, body);
+        exhaust.rotation.x = Math.PI / 2;
+      }
     } else {
       const isBuggy = definition.type === "buggy";
       const isSuper = definition.type === "super";
       const isRoadster = definition.type === "roadster";
-      const width = isBuggy ? 2.9 : (isSuper ? 3.15 : 3.05);
-      const length = isSuper ? 5.8 : 5.25;
-      const wheelRadius = isBuggy ? .72 : (isSuper ? .55 : .61);
+      const width = (isBuggy ? 2.9 : (isSuper ? 3.15 : 3.05)) * visual.widthScale;
+      const length = (isSuper ? 5.8 : 5.25) * visual.lengthScale;
+      const wheelRadius = (isBuggy ? .72 : (isSuper ? .55 : .61)) * visual.wheelScale;
+      const cabinY = (isSuper ? 1.48 : 1.65) * visual.heightScale;
 
       makeMesh(new THREE.BoxGeometry(width, isSuper ? .52 : .68, length), paint, 0, 1.02, 0, body);
       makeMesh(new THREE.BoxGeometry(width * .88, .25, 1.15), paintDark, 0, 1.08, -length * .42, body);
       if (isBuggy) {
-        const cabin = makeMesh(new THREE.BoxGeometry(2.15, 1.2, 2.1), MAT.dark, 0, 1.75, -.1, body);
+        const cabin = makeMesh(new THREE.BoxGeometry(width * .73, 1.05 * visual.heightScale, length * .4), MAT.dark, 0, 1.7, visual.cabinShift, body);
         cabin.material = new THREE.MeshStandardMaterial({ color: 0x1d2b30, roughness: .6, wireframe: true });
-        makeMesh(new THREE.BoxGeometry(2.3, .22, .6), paint, 0, 1.38, 1.48, body);
+        makeMesh(new THREE.BoxGeometry(width * .78, .22, .6), accent, 0, 1.38, length * .28, body);
       } else {
-        makeMesh(new THREE.BoxGeometry(width * .78, isSuper ? .66 : .92, isRoadster ? 1.75 : 2.35), paint, 0, isSuper ? 1.48 : 1.65, -.25, body);
-        const windshield = makeMesh(new THREE.BoxGeometry(width * .7, isSuper ? .52 : .69, .12), MAT.glass, 0, isSuper ? 1.52 : 1.74, .85, body);
+        const cabinLength = (isRoadster ? 1.75 : 2.35) * (.9 + visual.lengthScale * .1);
+        makeMesh(new THREE.BoxGeometry(width * .78, (isSuper ? .66 : .92) * visual.heightScale, cabinLength), paint, 0, cabinY, -.25 + visual.cabinShift, body);
+        const windshield = makeMesh(new THREE.BoxGeometry(width * .7, (isSuper ? .52 : .69) * visual.heightScale, .12), MAT.glass, 0, cabinY + .04, .85 + visual.cabinShift, body);
         windshield.rotation.x = -.2;
         if (!isRoadster) {
-          const rear = makeMesh(new THREE.BoxGeometry(width * .7, isSuper ? .48 : .64, .12), MAT.glass, 0, isSuper ? 1.5 : 1.72, -1.15, body);
+          const rear = makeMesh(new THREE.BoxGeometry(width * .7, (isSuper ? .48 : .64) * visual.heightScale, .12), MAT.glass, 0, cabinY + .02, -1.15 + visual.cabinShift, body);
           rear.rotation.x = .17;
         } else {
-          makeMesh(new THREE.BoxGeometry(width * .72, .14, 1.1), MAT.dark, 0, 2.08, -.45, body);
+          makeMesh(new THREE.BoxGeometry(width * .72, .14, 1.1), MAT.dark, 0, cabinY + .43, -.45 + visual.cabinShift, body);
         }
       }
-      makeMesh(new THREE.BoxGeometry(.7, .25, .08), MAT.white, -.87, 1.14, length / 2 + .04, body);
-      makeMesh(new THREE.BoxGeometry(.7, .25, .08), MAT.white, .87, 1.14, length / 2 + .04, body);
-      makeMesh(new THREE.BoxGeometry(.58, .22, .08), MAT.red, -.92, 1.15, -length / 2 - .04, body);
-      makeMesh(new THREE.BoxGeometry(.58, .22, .08), MAT.red, .92, 1.15, -length / 2 - .04, body);
-      wheel(-width / 2 - .08, .68, 1.65, wheelRadius, true);
-      wheel(width / 2 + .08, .68, 1.65, wheelRadius, true);
-      wheel(-width / 2 - .08, .68, -1.65, wheelRadius, false);
-      wheel(width / 2 + .08, .68, -1.65, wheelRadius, false);
+      const lampX = width * .29;
+      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, -lampX, 1.14, length / 2 + .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, lampX, 1.14, length / 2 + .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, -lampX, 1.15, -length / 2 - .04, body);
+      makeMesh(new THREE.BoxGeometry(width * .19, .22, .08), MAT.red, lampX, 1.15, -length / 2 - .04, body);
+      const axleZ = length * .315;
+      wheel(-width / 2 - .08, wheelRadius + .07, axleZ, wheelRadius, true);
+      wheel(width / 2 + .08, wheelRadius + .07, axleZ, wheelRadius, true);
+      wheel(-width / 2 - .08, wheelRadius + .07, -axleZ, wheelRadius, false);
+      wheel(width / 2 + .08, wheelRadius + .07, -axleZ, wheelRadius, false);
+
+      // 스트라이프와 포인트 파츠 조합으로 모든 모델의 실루엣을 구분합니다.
+      makeMesh(new THREE.BoxGeometry(width * (.1 + (visual.variant % 3) * .035), .05, length * .72), accent, 0, 1.38, 0, body);
+      if (visual.feature === 0 || visual.feature === 4) {
+        makeMesh(new THREE.BoxGeometry(width * .28, .18, length * .15), MAT.dark, 0, 1.45, length * .26, body);
+      }
+      if (visual.feature === 1 || visual.feature === 5) {
+        makeMesh(new THREE.BoxGeometry(width * .58, .2, length * .2), accent, 0, cabinY + .58, -.15 + visual.cabinShift, body);
+      }
+      if (visual.feature === 2) {
+        makeMesh(new THREE.BoxGeometry(width * .92, .2, .22), MAT.dark, 0, .95, length / 2 + .14, body);
+      }
     }
 
     // 선택된 무료 장신구를 실제 3D 모델에 추가합니다.
@@ -1900,8 +1974,8 @@
   function renderVehicleList() {
     $("#vehicle-list").innerHTML = GARAGE_ORDER.map(({ vehicleData, index }) => `
       <button class="vehicle-card ${index === previewIndex ? "selected" : ""}" type="button" role="option"
-        aria-selected="${index === previewIndex}" data-vehicle="${index}" style="--vehicle-color:#${vehicleData.color.toString(16).padStart(6,"0")}">
-        <span class="vehicle-thumb ${vehicleData.type === "bike" ? "bike" : ""}"></span>
+        aria-selected="${index === previewIndex}" data-vehicle="${index}" style="${getGarageCardStyle(vehicleData)}">
+        <span class="vehicle-thumb ${getGarageThumbClass(vehicleData)}"></span>
         <span><strong>${vehicleData.name}</strong><small>${vehicleData.className} · ${Math.round(vehicleData.maxSpeed * 3.6)} KM/H</small></span>
         <em class="${ownedVehicleIds.has(vehicleData.id) ? "owned" : "price"}">
           ${ownedVehicleIds.has(vehicleData.id) ? "보유중" : `💰 ${vehicleData.price.toLocaleString("ko-KR")}`}
