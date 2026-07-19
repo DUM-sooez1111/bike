@@ -1406,18 +1406,16 @@
       }
     }
 
-    // 산 정상에서 바깥쪽 끝으로 달려 내려갈 때 경사면을 작은 점프대처럼 사용합니다.
+    // 산 정상의 꼭대기를 넘어 반대편으로 내려가기 시작하는 순간 점프합니다.
     const previousHill = previousSurface.terrain?.type === "hill" ? previousSurface.terrain : null;
     if (state.grounded && previousHill && Math.abs(state.velocity) > 6) {
       const previousDistance = Math.hypot(previous.x - previousHill.x, previous.z - previousHill.z);
       const currentDistance = Math.hypot(state.position.x - previousHill.x, state.position.z - previousHill.z);
       const movingOutward = currentDistance > previousDistance + .001;
       const sameHill = surface.terrain === previousHill;
-      const crossedLaunchLip = sameHill
-        ? previousSurface.progress > .18 && surface.progress <= .18
-        : previousSurface.progress <= .22;
-      if (movingOutward && crossedLaunchLip) {
-        // 경사면이 끝나기 직전의 높이를 유지한 채 이륙해 지면에 붙어 내려가지 않게 합니다.
+      const crossedSummit = sameHill && previousSurface.progress >= .86;
+      if (movingOutward && crossedSummit) {
+        // 정상 높이를 유지한 채 이륙해 꼭대기에서 바로 공중으로 이어지게 합니다.
         state.position.y = Math.max(state.position.y, previousSurface.height);
         launchFromHill(previousHill, Math.abs(state.velocity));
       }
