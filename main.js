@@ -161,6 +161,12 @@
     { name: "동쪽 고원", copy: "넓은 맵을 내려다보는 주행 가능한 언덕", icon: "⛰️", x: 246, z: -125, heading: 0, unlockMinutes: 0 }
   ];
 
+  DESTINATIONS.push(
+    { name: "북쪽 대평원", copy: "확장된 맵의 북쪽 끝을 달리는 넓은 초원", icon: "🧭", x: 80, z: 575, heading: Math.PI, unlockMinutes: 0 },
+    { name: "동쪽 황야", copy: "긴 도로와 거대한 언덕이 이어지는 외곽 지역", icon: "🏜️", x: 585, z: -265, heading: -Math.PI / 2, unlockMinutes: 0 },
+    { name: "서쪽 끝자락", copy: "초장거리 직선 도로의 서쪽 종점", icon: "🌄", x: -620, z: 42, heading: Math.PI / 2, unlockMinutes: 0 }
+  );
+
   const PAINTS = [
     { name: "선셋 오렌지", value: 0xf05a35 },
     { name: "볼트 블루", value: 0x3575ff },
@@ -196,7 +202,8 @@
   const fpsText = $("#fps");
   const driftStatus = $("#drift-status");
   const moneyText = $("#money");
-  const WORLD_HALF_SIZE = 400;
+  // 기존 800×800 맵을 1400×1400으로 확장합니다.
+  const WORLD_HALF_SIZE = 700;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
   const SAVE_KEY = "neon-trails-save-v1";
   let savedGame = {};
@@ -248,7 +255,7 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x91cbed);
-  scene.fog = new THREE.Fog(0x9bcde3, 180, 680);
+  scene.fog = new THREE.Fog(0x9bcde3, 240, 980);
 
   const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 1200);
   camera.position.set(0, 7, -14);
@@ -292,7 +299,7 @@
 
   // 이미지 파일이 없어도 자연스러운 그라데이션 하늘이 보이는 스카이 돔입니다.
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(760, 24, 12),
+    new THREE.SphereGeometry(1800, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {
@@ -326,7 +333,7 @@
 
   // 잔디의 단조로움을 깨는 큰 다각형 패치
   const patchGeo = new THREE.CircleGeometry(1, 7);
-  for (let i = 0; i < 300; i += 1) {
+  for (let i = 0; i < 560; i += 1) {
     const patch = new THREE.Mesh(patchGeo, i % 5 === 0 ? MAT.dirt : (i % 2 ? MAT.grassLight : MAT.grassDark));
     patch.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI);
     patch.position.set((Math.random() - .5) * (WORLD_SIZE - 24), .008, (Math.random() - .5) * (WORLD_SIZE - 24));
@@ -457,15 +464,20 @@
   addRamp(82, -45, Math.PI / 2, 7, 12, 3.3);
   addRamp(-286, 42, Math.PI / 2, 13, 24, 7.2);
   addRamp(68, -276, 0, 10, 19, 5.5);
+  addRamp(-575, 42, Math.PI / 2, 13, 25, 7.5);
+  addRamp(68, -575, 0, 11, 22, 6.5);
+  addRamp(545, 430, -Math.PI / 2, 12, 22, 6.8);
 
   // 시작점에서 트랙, 다리, 호수, 산과 외곽 지역까지 이어지는 도로망입니다.
   addRoadPath([[0,-12],[18,-6],[35,3]], 11);
   addRoadPath([[68,34],[72,72],[78,112],[83,150],[85,166]], 10);
-  addRoadPath([[23,8],[-20,18],[-72,32],[-132,42],[-210,42],[-295,42]], 10);
-  addRoadPath([[68,-26],[68,-82],[68,-145],[68,-215],[68,-295]], 10);
-  addRoadPath([[-218,42],[-225,-10],[-235,-62],[-244,-108],[-239,-142]], 9);
-  addRoadPath([[108,-15],[150,-30],[190,-48],[218,-65]], 9);
-  addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258]], 10);
+  addRoadPath([[23,8],[-20,18],[-72,32],[-132,42],[-210,42],[-295,42],[-390,42],[-490,42],[-620,42]], 10);
+  addRoadPath([[68,-26],[68,-82],[68,-145],[68,-215],[68,-295],[68,-390],[68,-490],[68,-620]], 10);
+  addRoadPath([[-218,42],[-225,-10],[-235,-62],[-244,-108],[-239,-142],[-325,-150],[-405,-195],[-485,-255],[-565,-315]], 9);
+  addRoadPath([[108,-15],[150,-30],[190,-48],[218,-65],[235,-125],[330,-175],[440,-220],[585,-265]], 9);
+  addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258],[-175,315],[-285,330],[-405,375],[-575,430]], 10);
+  addRoadPath([[105,245],[185,275],[275,315],[380,360],[545,430]], 10);
+  addRoadPath([[42,252],[35,340],[52,430],[75,515],[80,620]], 10);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 10, MAT.dirt, 0, false);
@@ -541,6 +553,11 @@
   addHill(246, -82, 48, 24, MAT.grassLight);
   addHill(275, 135, 31, 14);
   addHill(-212, 258, 42, 20, MAT.grassDark);
+  addHill(-525, -365, 62, 29, MAT.grassDark);
+  addHill(520, -345, 70, 34, MAT.grassLight);
+  addHill(490, 515, 58, 27, MAT.grassDark);
+  addHill(-485, 505, 68, 33, MAT.grassLight);
+  addHill(0, 575, 50, 24, MAT.grassDark);
 
   function overlapsHill(x, z, clearance = 0) {
     return terrainSurfaces.some(terrain =>
@@ -565,8 +582,8 @@
   const riverCenterZ = x => 205 + Math.sin((x - 85) * .018) * 10 + Math.sin((x - 85) * .041) * 3;
   const riverWidth = x => 23 + Math.sin(x * .026) * 3.5;
   const riverSamples = [];
-  for (let index = 0; index <= 40; index += 1) {
-    const x = THREE.MathUtils.lerp(-390, 390, index / 40);
+  for (let index = 0; index <= 70; index += 1) {
+    const x = THREE.MathUtils.lerp(-690, 690, index / 70);
     riverSamples.push({ x, z: riverCenterZ(x), halfWidth: riverWidth(x) / 2 });
   }
 
@@ -733,6 +750,17 @@
     );
   }
 
+  // 확장된 외곽 지역에도 숲이 자연스럽게 이어지도록 넓은 고리 형태로 배치합니다.
+  for (let i = 0; i < 168; i += 1) {
+    const angle = i / 168 * Math.PI * 2 + (Math.random() - .5) * .055;
+    const radius = 395 + Math.random() * 260;
+    addTree(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      .78 + Math.random() * .82
+    );
+  }
+
   for (let i = 0; i < 28; i += 1) {
     const angle = i / 28 * Math.PI * 2;
     const radius = 96 + Math.random() * 30;
@@ -781,6 +809,28 @@
     colliders.push({ minX: rock.position.x - rockRadius, maxX: rock.position.x + rockRadius, minZ: rock.position.z - rockRadius, maxZ: rock.position.z + rockRadius, maxY: rockRadius * 1.5 });
   }
 
+  for (let i = 0; i < 112; i += 1) {
+    const angle = i / 112 * Math.PI * 2 + Math.random() * .045;
+    const radius = 400 + Math.random() * 255;
+    const rockX = Math.cos(angle) * radius;
+    const rockZ = Math.sin(angle) * radius;
+    if (isDriveLane(rockX, rockZ, 3) || overlapsHill(rockX, rockZ, 3) || overlapsWater(rockX, rockZ, 3)) continue;
+    const rockRadius = .55 + Math.random() * 1.65;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
+    rock.position.set(rockX, .55, rockZ);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.scale.y = .48 + Math.random() * .6;
+    rock.castShadow = true;
+    world.add(rock);
+    colliders.push({
+      minX: rockX - rockRadius,
+      maxX: rockX + rockRadius,
+      minZ: rockZ - rockRadius,
+      maxZ: rockZ + rockRadius,
+      maxY: rockRadius * 1.6
+    });
+  }
+
   // 맵 경계 밖 배경 산
   for (let i = 0; i < 38; i += 1) {
     const angle = i / 38 * Math.PI * 2;
@@ -811,6 +861,10 @@
   addCloud(180, 42, -120, 1.35);
   addCloud(-310, 52, -175, 1.5);
   addCloud(285, 45, 230, 1.4);
+  addCloud(-560, 55, -360, 1.65);
+  addCloud(540, 48, -410, 1.55);
+  addCloud(480, 58, 510, 1.7);
+  addCloud(-440, 44, 520, 1.45);
 
   // 시작 지점의 실제 차량 스폰 패드
   const spawnPad = new THREE.Group();
