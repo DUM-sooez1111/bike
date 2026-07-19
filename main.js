@@ -430,30 +430,59 @@
 
   // 여러 지점을 잇는 도로를 만들고 나무·돌 생성 제외 구역에도 등록합니다.
   function addRoadPath(points, width = 10, material = MAT.road) {
-    for (let index = 0; index < points.length - 1; index += 1) {
-      const [ax, az] = points[index];
-      const [bx, bz] = points[index + 1];
-      const dx = bx - ax;
-      const dz = bz - az;
-      const length = Math.hypot(dx, dz);
-      const rotationY = Math.atan2(dx, dz);
-      addBox((ax + bx) / 2, .032, (az + bz) / 2, width, .064, length + .8, material, rotationY, false);
-      const dashCount = Math.max(1, Math.floor(length / 11));
-      for (let dash = 0; dash < dashCount; dash += 1) {
-        const t = (dash + .5) / dashCount;
-        addBox(
-          THREE.MathUtils.lerp(ax, bx, t),
-          .072,
-          THREE.MathUtils.lerp(az, bz, t),
-          .18,
-          .025,
-          Math.min(4.2, length / dashCount * .48),
-          MAT.roadEdge,
-          rotationY,
-          false
-        );
+    const controlPoints = points.map(([x, z]) => new THREE.Vector3(x, .038, z));
+    const curve = new THREE.CatmullRomCurve3(controlPoints, false, "centripetal", .5);
+    const roughLength = points.slice(1).reduce((total, point, index) =>
+      total + Math.hypot(point[0] - points[index][0], point[1] - points[index][1]), 0);
+    const samples = curve.getPoints(Math.max(8, Math.ceil(roughLength / 9)));
+    const positions = [];
+    const indices = [];
+
+    samples.forEach((point, index) => {
+      const previous = samples[Math.max(0, index - 1)];
+      const next = samples[Math.min(samples.length - 1, index + 1)];
+      const tangentX = next.x - previous.x;
+      const tangentZ = next.z - previous.z;
+      const tangentLength = Math.max(Math.hypot(tangentX, tangentZ), .001);
+      const sideX = tangentZ / tangentLength;
+      const sideZ = -tangentX / tangentLength;
+      positions.push(
+        point.x + sideX * width / 2, point.y, point.z + sideZ * width / 2,
+        point.x - sideX * width / 2, point.y, point.z - sideZ * width / 2
+      );
+      if (index < samples.length - 1) {
+        const offset = index * 2;
+        indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
       }
-      roadSegments.push({ ax, az, bx, bz, width });
+      if (index > 0) {
+        const previousPoint = samples[index - 1];
+        roadSegments.push({
+          ax: previousPoint.x, az: previousPoint.z,
+          bx: point.x, bz: point.z,
+          width
+        });
+      }
+    });
+
+    const roadGeometry = new THREE.BufferGeometry();
+    roadGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    roadGeometry.setIndex(indices);
+    roadGeometry.computeVertexNormals();
+    const roadMaterial = material.clone();
+    roadMaterial.side = THREE.DoubleSide;
+    const road = new THREE.Mesh(roadGeometry, roadMaterial);
+    road.receiveShadow = true;
+    world.add(road);
+
+    if (material === MAT.road) {
+      const centerLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(samples.map(point =>
+          new THREE.Vector3(point.x, point.y + .045, point.z)
+        )),
+        new THREE.LineDashedMaterial({ color: 0xf4ead1, dashSize: 4.2, gapSize: 6.2 })
+      );
+      centerLine.computeLineDistances();
+      world.add(centerLine);
     }
   }
 
@@ -816,7 +845,10 @@
   }
 
   groundPatches.forEach(patch => {
-    if (overlapsWater(patch.position.x, patch.position.z, 1.5)) world.remove(patch);
+    if (
+      overlapsWater(patch.position.x, patch.position.z, 1.5) ||
+      isDriveLane(patch.position.x, patch.position.z, 1.2)
+    ) world.remove(patch);
   });
 
   function addTree(x, z, scale = 1) {
