@@ -67,8 +67,8 @@
     Math.round(THREE.MathUtils.clamp((value - low) / (high - low) * 70 + 30, 30, 100));
 
   VEHICLE_SERIES.forEach((series, categoryIndex) => {
-    for (let number = 1; number <= 50; number += 1) {
-      const tier = (number - 1) / 49;
+    for (let number = 1; number <= 100; number += 1) {
+      const tier = (number - 1) / 99;
       const wave = Math.sin(number * 1.73 + categoryIndex) * .5 + .5;
       const maxSpeed = series.base.speed + tier * 16 + wave * 2.4;
       const acceleration = series.base.acceleration + tier * 8 + (1 - wave) * 1.7;
@@ -81,7 +81,7 @@
         id: `${series.type}-${String(number).padStart(2, "0")}`,
         name: `${series.prefix} ${series.words[(number - 1) % series.words.length]} ${String(number).padStart(2, "0")}`,
         type: series.type,
-        className: `${series.className} T${Math.min(5, Math.ceil(number / 10))}`,
+        className: `${series.className} T${Math.min(10, Math.ceil(number / 10))}`,
         color,
         maxSpeed,
         acceleration,
