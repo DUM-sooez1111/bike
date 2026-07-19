@@ -656,7 +656,14 @@
   }
 
   const waterMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .66,
+    // 수면 아래 차량이 하얗게 씻겨 사라지지 않도록 맑은 물처럼 투명하게 표현합니다.
+    color: 0x238eb9,
+    emissive: 0x062f45,
+    emissiveIntensity: .08,
+    roughness: .38,
+    metalness: .03,
+    transparent: true,
+    opacity: .24,
     depthWrite: false, side: THREE.DoubleSide, flatShading: true
   });
   const lakeShore = new THREE.Mesh(new THREE.RingGeometry(44, 49, 24), MAT.dirt);
@@ -705,13 +712,13 @@
 
   createRiverRibbon(4.5, .018, MAT.dirt);
   const riverMaterial = new THREE.MeshStandardMaterial({
-    color: 0x238fc4,
-    emissive: 0x073f5d,
-    emissiveIntensity: .18,
-    roughness: .28,
-    metalness: .04,
+    color: 0x1c86b4,
+    emissive: 0x052d42,
+    emissiveIntensity: .09,
+    roughness: .4,
+    metalness: .02,
     transparent: true,
-    opacity: .68,
+    opacity: .28,
     depthWrite: false,
     side: THREE.DoubleSide,
     flatShading: true
