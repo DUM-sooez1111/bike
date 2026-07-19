@@ -96,6 +96,14 @@
     }
   });
 
+  // 차고는 무료 차량부터 시작해 가격이 낮은 순서로 고정 정렬합니다.
+  const GARAGE_ORDER = VEHICLES
+    .map((vehicleData, index) => ({ vehicleData, index }))
+    .sort((a, b) =>
+      (a.vehicleData.price || 0) - (b.vehicleData.price || 0) ||
+      a.vehicleData.name.localeCompare(b.vehicleData.name)
+    );
+
   const DESTINATIONS = [
     { name: "시작 캠프", copy: "차량 스폰 패드와 초보 연습장", icon: "🏁", x: 0, z: -12, heading: 0, unlockMinutes: 0 },
     { name: "메가 점프장", copy: "북쪽의 가장 높은 점프 코스", icon: "🚀", x: -38, z: 100, heading: Math.PI, unlockMinutes: 0 },
@@ -437,6 +445,13 @@
   addHill(275, 135, 31, 14);
   addHill(-212, 258, 42, 20, MAT.grassDark);
 
+  function overlapsHill(x, z, clearance = 0) {
+    return terrainSurfaces.some(terrain =>
+      terrain.type === "hill" &&
+      Math.hypot(x - terrain.x, z - terrain.z) < terrain.radius + clearance
+    );
+  }
+
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: 0x2f9fca, roughness: .22, metalness: .08, transparent: true, opacity: .82, flatShading: true
   });
@@ -538,7 +553,7 @@
   terrainSurfaces.push({ type: "box", minX: 78, maxX: 92, minZ: 187, maxZ: 223, height: 1.4 });
 
   function addTree(x, z, scale = 1) {
-    if (isDriveLane(x, z, 2.5 * scale)) return null;
+    if (isDriveLane(x, z, 2.5 * scale) || overlapsHill(x, z, 2.8 * scale)) return null;
     const group = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.35, .52, 3.3, 6), MAT.trunk);
     trunk.position.y = 1.65;
@@ -592,7 +607,7 @@
     const radius = 96 + Math.random() * 30;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
     const rockRadius = .7 + Math.random() * 1.5;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .65, rockZ);
@@ -608,7 +623,7 @@
     const radius = 155 + Math.random() * 68;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
     const rockRadius = .6 + Math.random() * 1.35;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .58, rockZ);
@@ -624,7 +639,7 @@
     const radius = 245 + Math.random() * 125;
     const rockX = Math.cos(angle) * radius;
     const rockZ = Math.sin(angle) * radius;
-    if (isDriveLane(rockX, rockZ, 2.5)) continue;
+    if (isDriveLane(rockX, rockZ, 2.5) || overlapsHill(rockX, rockZ, 2.5)) continue;
     const rockRadius = .55 + Math.random() * 1.45;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockRadius, 0), MAT.rock);
     rock.position.set(rockX, .55, rockZ);
@@ -1137,7 +1152,7 @@
       const surface = getSurfaceInfo(ai.root.position);
       ai.root.position.y = surface.height;
       ai.root.rotation.y = ai.heading;
-      ai.model.body.rotation.x = surface.pitch;
+      ai.model.body.rotation.x = surfacePitchForHeading(surface, ai.heading);
       ai.tiltImpulse *= Math.exp(-7 * dt);
       ai.model.body.rotation.z = -steering * .12 + ai.tiltImpulse;
       ai.spin += actualSpeed * dt / .62;
@@ -1163,6 +1178,179 @@
   );
   blobShadow.rotation.x = -Math.PI / 2;
   scene.add(blobShadow);
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 바퀴 자국: 작은 로우폴리 평면을 풀링해 자동차는 두 줄, 바이크는 한 줄로 남깁니다.
+  // ────────────────────────────────────────────────────────────────────────
+  const TIRE_TRACK_COUNT = 120;
+  const TIRE_TRACK_LIFETIME = 24;
+  const tireTracks = [];
+  let tireTrackCursor = 0;
+  let previousTrackPoints = null;
+
+  for (let index = 0; index < TIRE_TRACK_COUNT; index += 1) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x17201d,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2
+    });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, .018, 1), material);
+    mesh.visible = false;
+    mesh.renderOrder = 2;
+    scene.add(mesh);
+    tireTracks.push({ mesh, age: TIRE_TRACK_LIFETIME, strength: 0 });
+  }
+
+  function placeTireTrack(start, end, width, strength, surfaceY) {
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dz);
+    if (length < .04 || length > 3.2) return;
+    const track = tireTracks[tireTrackCursor];
+    tireTrackCursor = (tireTrackCursor + 1) % tireTracks.length;
+    track.age = 0;
+    track.strength = strength;
+    track.mesh.visible = true;
+    track.mesh.position.set((start.x + end.x) / 2, surfaceY + .035, (start.z + end.z) / 2);
+    track.mesh.rotation.set(0, Math.atan2(dx, dz), 0);
+    track.mesh.scale.set(width, 1, length + .08);
+    track.mesh.material.opacity = strength;
+  }
+
+  function updateTireTracks(dt) {
+    tireTracks.forEach(track => {
+      if (!track.mesh.visible) return;
+      track.age += dt;
+      const remaining = 1 - track.age / TIRE_TRACK_LIFETIME;
+      if (remaining <= 0) {
+        track.mesh.visible = false;
+        track.mesh.material.opacity = 0;
+      } else {
+        track.mesh.material.opacity = track.strength * Math.pow(remaining, 1.35);
+      }
+    });
+
+    if (!state.grounded || Math.abs(state.velocity) < 3) {
+      previousTrackPoints = null;
+      return;
+    }
+
+    const definition = currentVehicle();
+    const isBike = definition.type === "bike";
+    const forwardX = Math.sin(state.travelHeading);
+    const forwardZ = Math.cos(state.travelHeading);
+    const sideX = Math.cos(state.heading);
+    const sideZ = -Math.sin(state.heading);
+    const rearDistance = isBike ? 1.48 : 1.62;
+    const wheelOffset = isBike ? 0 : 1.18;
+    const rearX = state.position.x - forwardX * rearDistance;
+    const rearZ = state.position.z - forwardZ * rearDistance;
+    const currentPoints = isBike
+      ? [new THREE.Vector3(rearX, 0, rearZ)]
+      : [
+          new THREE.Vector3(rearX - sideX * wheelOffset, 0, rearZ - sideZ * wheelOffset),
+          new THREE.Vector3(rearX + sideX * wheelOffset, 0, rearZ + sideZ * wheelOffset)
+        ];
+
+    if (!previousTrackPoints || previousTrackPoints.length !== currentPoints.length) {
+      previousTrackPoints = currentPoints;
+      return;
+    }
+    const movement = currentPoints[0].distanceTo(previousTrackPoints[0]);
+    if (movement > 3) {
+      previousTrackPoints = currentPoints;
+      return;
+    }
+    if (movement < .38) return;
+
+    const strength = THREE.MathUtils.lerp(.24, .68, state.drift);
+    const width = isBike ? .14 : THREE.MathUtils.lerp(.16, .24, state.drift);
+    currentPoints.forEach((point, index) => {
+      placeTireTrack(previousTrackPoints[index], point, width, strength, state.position.y);
+    });
+    previousTrackPoints = currentPoints;
+  }
+
+  // 드리프트 연기 역시 고정 크기 풀을 사용해 장시간 플레이해도 오브젝트가 계속 늘지 않습니다.
+  const DRIFT_SMOKE_COUNT = 72;
+  const smokeGeometry = new THREE.IcosahedronGeometry(.32, 0);
+  const driftSmoke = [];
+  let smokeCursor = 0;
+  let smokeAccumulator = 0;
+
+  for (let index = 0; index < DRIFT_SMOKE_COUNT; index += 1) {
+    const material = new THREE.MeshBasicMaterial({
+      color: index % 3 === 0 ? 0x8f9995 : 0xb7bfbc,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+    const mesh = new THREE.Mesh(smokeGeometry, material);
+    mesh.visible = false;
+    mesh.renderOrder = 3;
+    scene.add(mesh);
+    driftSmoke.push({ mesh, velocity: new THREE.Vector3(), age: 0, lifetime: 1 });
+  }
+
+  function emitDriftSmoke() {
+    const particle = driftSmoke[smokeCursor];
+    smokeCursor = (smokeCursor + 1) % driftSmoke.length;
+    const isBike = currentVehicle().type === "bike";
+    const forwardX = Math.sin(state.travelHeading);
+    const forwardZ = Math.cos(state.travelHeading);
+    const sideX = Math.cos(state.heading);
+    const sideZ = -Math.sin(state.heading);
+    const side = isBike ? 0 : (Math.random() < .5 ? -1 : 1);
+    const rearDistance = isBike ? 1.45 : 1.65;
+    const wheelOffset = isBike ? 0 : 1.15;
+    particle.mesh.position.set(
+      state.position.x - forwardX * rearDistance + sideX * wheelOffset * side,
+      state.position.y + .32,
+      state.position.z - forwardZ * rearDistance + sideZ * wheelOffset * side
+    );
+    particle.velocity.set(
+      -forwardX * (.5 + Math.random() * .8) + sideX * side * (Math.random() - .2),
+      .8 + Math.random() * .9,
+      -forwardZ * (.5 + Math.random() * .8) + sideZ * side * (Math.random() - .2)
+    );
+    particle.age = 0;
+    particle.lifetime = .75 + Math.random() * .55;
+    particle.mesh.scale.setScalar(.55 + Math.random() * .45);
+    particle.mesh.material.opacity = .62;
+    particle.mesh.visible = true;
+  }
+
+  function updateDriftSmoke(dt) {
+    driftSmoke.forEach(particle => {
+      if (!particle.mesh.visible) return;
+      particle.age += dt;
+      if (particle.age >= particle.lifetime) {
+        particle.mesh.visible = false;
+        particle.mesh.material.opacity = 0;
+        return;
+      }
+      particle.mesh.position.addScaledVector(particle.velocity, dt);
+      particle.velocity.multiplyScalar(Math.exp(-1.9 * dt));
+      particle.velocity.y += .24 * dt;
+      const progress = particle.age / particle.lifetime;
+      particle.mesh.scale.multiplyScalar(1 + dt * 1.25);
+      particle.mesh.material.opacity = .62 * Math.pow(1 - progress, 1.35);
+    });
+
+    const emitting = state.grounded && state.drift > .18 && Math.abs(state.velocity) > 6;
+    if (!emitting) {
+      smokeAccumulator = 0;
+      return;
+    }
+    smokeAccumulator += dt * (7 + state.drift * 23);
+    while (smokeAccumulator >= 1) {
+      smokeAccumulator -= 1;
+      emitDriftSmoke();
+    }
+  }
 
   // ────────────────────────────────────────────────────────────────────────
   // 자동차 물리
@@ -1215,7 +1403,7 @@
     state.heading = heading;
     state.travelHeading = heading;
     state.grounded = true;
-    state.pitch = spawnSurface.pitch;
+    state.pitch = surfacePitchForHeading(spawnSurface, heading);
     state.roll = 0;
     state.wheelie = 0;
     state.drift = 0;
@@ -1277,9 +1465,12 @@
         const distance = Math.hypot(dx, dz);
         if (distance <= terrain.radius + margin) {
           const progress = THREE.MathUtils.clamp(1 - distance / terrain.radius, 0, 1);
+          const slope = terrain.height / terrain.radius;
           return {
             height: terrain.height * progress,
-            pitch: distance > .01 ? Math.atan2(terrain.height, terrain.radius) * (dz / distance) : 0,
+            pitch: 0,
+            gradientX: distance > .01 ? -slope * dx / distance : 0,
+            gradientZ: distance > .01 ? -slope * dz / distance : 0,
             ramp: null,
             terrain,
             progress
@@ -1288,6 +1479,16 @@
       }
     }
     return { height: 0, pitch: 0, ramp: null, terrain: null, progress: 0 };
+  }
+
+  function surfacePitchForHeading(surface, heading) {
+    if (Number.isFinite(surface.gradientX) && Number.isFinite(surface.gradientZ)) {
+      const forwardSlope =
+        surface.gradientX * Math.sin(heading) +
+        surface.gradientZ * Math.cos(heading);
+      return -Math.atan(forwardSlope);
+    }
+    return surface.pitch;
   }
 
   function getRampForwardSpeed(ramp) {
@@ -1546,12 +1747,13 @@
         state.position.y = surface.height;
         state.verticalVelocity = 0;
         state.grounded = true;
-        state.pitch = surface.pitch;
+        state.pitch = surfacePitchForHeading(surface, state.travelHeading);
         state.roll *= .22;
       }
     } else {
       state.position.y = surface.height;
-      state.pitch = THREE.MathUtils.lerp(state.pitch, surface.pitch, 1 - Math.exp(-10 * dt));
+      const targetSurfacePitch = surfacePitchForHeading(surface, state.travelHeading);
+      state.pitch = THREE.MathUtils.lerp(state.pitch, targetSurfacePitch, 1 - Math.exp(-10 * dt));
       const lean = (spec.type === "bike" ? .24 : .065) + state.drift * (spec.type === "bike" ? .08 : .055);
       state.roll = THREE.MathUtils.lerp(state.roll, -steer * speedRatio * lean, 1 - Math.exp(-8 * dt));
       if (surface.ramp && surface.progress > .93) {
@@ -1610,12 +1812,13 @@
   function updateCamera(dt) {
     const speedRatio = Math.min(Math.abs(state.velocity) / currentVehicle().maxSpeed, 1);
     const compactScreen = innerWidth < 650 || innerHeight < 540;
+    const tinyScreen = innerWidth < 480 || innerHeight < 460;
     const sideViewAmount = Math.abs(Math.sin(cameraYaw));
-    const distance = (compactScreen ? 13.2 : 10.8) + speedRatio * 3.3 + sideViewAmount * 1.6;
+    const distance = (tinyScreen ? 16.4 : compactScreen ? 13.2 : 10.8) + speedRatio * 3.3 + sideViewAmount * 1.6;
     const angle = state.heading + cameraYaw;
     desiredCamera.set(
       state.position.x - Math.sin(angle) * distance,
-      state.position.y + 5.2 + speedRatio + cameraPitch * 8,
+      state.position.y + (tinyScreen ? 6.35 : 5.2) + speedRatio + cameraPitch * 8,
       state.position.z - Math.cos(angle) * distance
     );
     camera.position.lerp(desiredCamera, 1 - Math.exp(-4.4 * dt));
@@ -1623,12 +1826,12 @@
     const lookAhead = 4 * (1 - sideViewAmount * .92);
     cameraTarget.set(
       state.position.x + Math.sin(state.heading) * lookAhead,
-      state.position.y + 1.25,
+      state.position.y + (tinyScreen ? .72 : 1.25),
       state.position.z + Math.cos(state.heading) * lookAhead
     );
     smoothedTarget.lerp(cameraTarget, 1 - Math.exp(-7 * dt));
     camera.lookAt(smoothedTarget);
-    camera.fov = THREE.MathUtils.lerp(camera.fov, (compactScreen ? 64 : 59) + speedRatio * 7, 1 - Math.exp(-3 * dt));
+    camera.fov = THREE.MathUtils.lerp(camera.fov, (tinyScreen ? 68 : compactScreen ? 64 : 59) + speedRatio * 7, 1 - Math.exp(-3 * dt));
     camera.updateProjectionMatrix();
     cameraYaw *= Math.exp(-.18 * dt);
 
@@ -1695,7 +1898,7 @@
   }
 
   function renderVehicleList() {
-    $("#vehicle-list").innerHTML = VEHICLES.map((vehicleData, index) => `
+    $("#vehicle-list").innerHTML = GARAGE_ORDER.map(({ vehicleData, index }) => `
       <button class="vehicle-card ${index === previewIndex ? "selected" : ""}" type="button" role="option"
         aria-selected="${index === previewIndex}" data-vehicle="${index}" style="--vehicle-color:#${vehicleData.color.toString(16).padStart(6,"0")}">
         <span class="vehicle-thumb ${vehicleData.type === "bike" ? "bike" : ""}"></span>
@@ -1713,7 +1916,8 @@
 
   function updateVehicleDetail() {
     const def = VEHICLES[previewIndex];
-    $("#vehicle-number").textContent = String(previewIndex + 1).padStart(2, "0");
+    const garageRank = GARAGE_ORDER.findIndex(item => item.index === previewIndex) + 1;
+    $("#vehicle-number").textContent = String(garageRank).padStart(2, "0");
     $("#vehicle-name").textContent = def.name;
     $("#vehicle-class").textContent = def.className;
     $("#vehicle-description").textContent = def.description;
@@ -2036,9 +2240,22 @@
       const key = button.dataset.key;
       keys[key] = value;
     };
-    button.addEventListener("pointerdown", event => { event.preventDefault(); set(true); });
-    button.addEventListener("pointerup", () => set(false));
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      try { button.setPointerCapture?.(event.pointerId); } catch (_) { /* 일부 모바일 브라우저는 캡처를 지원하지 않습니다. */ }
+      set(true);
+    });
+    button.addEventListener("pointerup", event => {
+      set(false);
+      try {
+        if (button.hasPointerCapture?.(event.pointerId)) button.releasePointerCapture(event.pointerId);
+      } catch (_) { /* 이미 해제된 포인터는 무시합니다. */ }
+    });
     button.addEventListener("pointercancel", () => set(false));
+    button.addEventListener("lostpointercapture", () => set(false));
+  });
+  window.addEventListener("pointercancel", () => {
+    ["w", "a", "s", "d", " "].forEach(key => { keys[key] = false; });
   });
 
   function setPaused(value) {
@@ -2157,6 +2374,10 @@
         state.displayedSpeed = 0;
       }
       runFrameSystem("크레딧", () => updateMoneyPickups(dt));
+      runFrameSystem("타이어 효과", () => {
+        updateTireTracks(dt);
+        updateDriftSmoke(dt);
+      });
     }
     if (started) {
       autoSaveElapsed += dt;
