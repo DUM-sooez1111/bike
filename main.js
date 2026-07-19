@@ -1179,7 +1179,7 @@
         if (
           position.x >= terrain.minX - margin && position.x <= terrain.maxX + margin &&
           position.z >= terrain.minZ - margin && position.z <= terrain.maxZ + margin
-        ) return { height: terrain.height, pitch: 0, ramp: null, progress: 0 };
+        ) return { height: terrain.height, pitch: 0, ramp: null, terrain, progress: 0 };
       } else if (terrain.type === "hill") {
         const dx = position.x - terrain.x;
         const dz = position.z - terrain.z;
@@ -1190,12 +1190,13 @@
             height: terrain.height * progress,
             pitch: distance > .01 ? Math.atan2(terrain.height, terrain.radius) * (dz / distance) : 0,
             ramp: null,
+            terrain,
             progress
           };
         }
       }
     }
-    return { height: 0, pitch: 0, ramp: null, progress: 0 };
+    return { height: 0, pitch: 0, ramp: null, terrain: null, progress: 0 };
   }
 
   function getRampForwardSpeed(ramp) {
@@ -1207,6 +1208,14 @@
     const angle = Math.atan2(ramp.height, ramp.length);
     state.verticalVelocity = Math.max(4.8, forwardSpeed * Math.sin(angle) * .72);
     state.grounded = false;
+  }
+
+  function launchFromHill(hill, speed) {
+    const slope = Math.atan2(hill.height, hill.radius);
+    // 산 끝은 점프대보다 완만하므로 속도에 비례한 힘과 최소 이륙 힘을 함께 사용합니다.
+    state.verticalVelocity = Math.max(5.8, speed * Math.sin(slope) * .62);
+    state.grounded = false;
+    state.pitch = -Math.min(slope, .42);
   }
 
   function applyCollisionBounce(normalX, normalZ, previous, extraImpact = 0) {
@@ -1394,6 +1403,23 @@
       } else {
         state.grounded = false;
         state.verticalVelocity = 0;
+      }
+    }
+
+    // 산 정상에서 바깥쪽 끝으로 달려 내려갈 때 경사면을 작은 점프대처럼 사용합니다.
+    const previousHill = previousSurface.terrain?.type === "hill" ? previousSurface.terrain : null;
+    if (state.grounded && previousHill && Math.abs(state.velocity) > 6) {
+      const previousDistance = Math.hypot(previous.x - previousHill.x, previous.z - previousHill.z);
+      const currentDistance = Math.hypot(state.position.x - previousHill.x, state.position.z - previousHill.z);
+      const movingOutward = currentDistance > previousDistance + .001;
+      const sameHill = surface.terrain === previousHill;
+      const crossedLaunchLip = sameHill
+        ? previousSurface.progress > .18 && surface.progress <= .18
+        : previousSurface.progress <= .22;
+      if (movingOutward && crossedLaunchLip) {
+        // 경사면이 끝나기 직전의 높이를 유지한 채 이륙해 지면에 붙어 내려가지 않게 합니다.
+        state.position.y = Math.max(state.position.y, previousSurface.height);
+        launchFromHill(previousHill, Math.abs(state.velocity));
       }
     }
 
