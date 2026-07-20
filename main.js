@@ -2391,6 +2391,17 @@
       }
     }
 
+    // 다리, 절벽, 높은 도로 끝에서 지면이 크게 낮아지면 아래 지면으로 순간이동하지 않고 중력으로 떨어집니다.
+    const unsupportedDrop = state.position.y - surface.height;
+    if (
+      state.grounded &&
+      unsupportedDrop > 1.05 &&
+      previousSurface.height > surface.height + 1.05
+    ) {
+      state.grounded = false;
+      state.verticalVelocity = Math.min(state.verticalVelocity, 0);
+    }
+
     // T를 누르고 전진하면 앞바퀴를 드는 윌리 묘기를 수행합니다.
     // 바이크는 큰 각도, 자동차는 무게에 맞춘 낮은 각도로 연출됩니다.
     const canWheelie = state.grounded && !surface.ramp && state.velocity > 4;
