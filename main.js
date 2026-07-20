@@ -1083,9 +1083,19 @@
   // 맵 경계 밖 배경 산
   for (let i = 0; i < 38; i += 1) {
     const angle = i / 38 * Math.PI * 2;
-    const radius = WORLD_HALF_SIZE + 62 + Math.random() * 34;
-    const mountain = new THREE.Mesh(new THREE.ConeGeometry(22 + Math.random() * 18, 42 + Math.random() * 35, 5), i % 3 ? MAT.rock : MAT.concreteDark);
-    mountain.position.set(Math.cos(angle) * radius, 12, Math.sin(angle) * radius);
+    const mountainRadius = 22 + Math.random() * 18;
+    const mountainHeight = 42 + Math.random() * 35;
+    // 산의 가장 가까운 면도 맵 벽에서 충분히 떨어지게 해 외곽 산이 맵 안으로 파고들지 않게 합니다.
+    const distance = WORLD_HALF_SIZE + 140 + mountainRadius + Math.random() * 55;
+    const mountain = new THREE.Mesh(
+      new THREE.ConeGeometry(mountainRadius, mountainHeight, 5),
+      i % 3 ? MAT.rock : MAT.concreteDark
+    );
+    mountain.position.set(
+      Math.cos(angle) * distance,
+      mountainHeight / 2 - .05,
+      Math.sin(angle) * distance
+    );
     mountain.rotation.y = Math.random() * Math.PI;
     world.add(mountain);
   }
@@ -1624,6 +1634,7 @@
       ai.collisionCooldown = Math.max(0, ai.collisionCooldown - dt);
       ai.speedScale = THREE.MathUtils.lerp(ai.speedScale, 1, 1 - Math.exp(-2.5 * dt));
       const waterSpeedScale = isPositionInWater(ai.pathPosition) ? .38 : 1;
+      const riverFlow = getRiverFlow(ai.pathPosition);
       const actualSpeed = ai.speed * ai.speedScale * waterSpeedScale;
       ai.decisionTimer -= dt;
       ai.wanderPhase += dt * ai.wanderTurnRate;
@@ -1642,6 +1653,11 @@
       const wanderingSpeed = actualSpeed * (.72 + (Math.sin(ai.wanderPhase * .63) + 1) * .14);
       ai.pathPosition.x += Math.sin(ai.heading) * wanderingSpeed * dt;
       ai.pathPosition.z += Math.cos(ai.heading) * wanderingSpeed * dt;
+      if (riverFlow) {
+        // AI도 플레이어와 같은 물살에 밀려 강을 자연스럽게 건너거나 하류로 떠내려갑니다.
+        ai.pathPosition.x += riverFlow.x * riverFlow.speed * dt;
+        ai.pathPosition.z += riverFlow.z * riverFlow.speed * dt;
+      }
       steering = THREE.MathUtils.clamp(headingDelta, -.42, .42);
 
       ai.knockbackOffset.addScaledVector(ai.knockbackVelocity, dt);
@@ -2144,6 +2160,39 @@
     return waterZones.some(zone => waterCollisionNormal(zone, position));
   }
 
+  // 강 구간에서만 하류 방향과 물살 세기를 계산합니다. 호수는 흐름이 없는 잔잔한 물로 남습니다.
+  function getRiverFlow(position) {
+    let strongestFlow = null;
+    for (const zone of waterZones) {
+      if (zone.type !== "capsule") continue;
+      const segmentX = zone.bx - zone.ax;
+      const segmentZ = zone.bz - zone.az;
+      const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+      if (lengthSquared < .001) continue;
+      const t = THREE.MathUtils.clamp(
+        ((position.x - zone.ax) * segmentX + (position.z - zone.az) * segmentZ) / lengthSquared,
+        0,
+        1
+      );
+      const closestX = zone.ax + segmentX * t;
+      const closestZ = zone.az + segmentZ * t;
+      const distance = Math.hypot(position.x - closestX, position.z - closestZ);
+      if (distance >= zone.radius) continue;
+      const centerStrength = 1 - distance / zone.radius;
+      const length = Math.sqrt(lengthSquared);
+      const speed = 2.4 + centerStrength * 5.2;
+      if (!strongestFlow || speed > strongestFlow.speed) {
+        strongestFlow = {
+          x: segmentX / length,
+          z: segmentZ / length,
+          speed,
+          centerStrength
+        };
+      }
+    }
+    return strongestFlow;
+  }
+
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
@@ -2183,7 +2232,9 @@
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
     const inWaterBeforeMove = isPositionInWater(state.position) && state.position.y < WATER_LEVEL + .3;
+    const riverFlowBeforeMove = getRiverFlow(state.position);
     const waterPropulsion = inWaterBeforeMove ? .38 : 1;
+    const waterSteering = inWaterBeforeMove ? .56 : 1;
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
     const surfaceBeforeMove = getSurfaceInfo(state.position);
@@ -2252,7 +2303,7 @@
     // 앞바퀴가 들린 동안에는 지면 접지력이 줄어 조향이 조금 둔해집니다.
     const wheelieSteering = THREE.MathUtils.lerp(1, .48, THREE.MathUtils.clamp(state.wheelie / .55, 0, 1));
     const driftSteering = THREE.MathUtils.lerp(1, 1.85, state.drift);
-    state.heading += steer * spec.handling * highSpeedSteering * airControl * wheelieSteering * driftSteering * moving * (state.velocity >= 0 ? 1 : -1) * dt;
+    state.heading += steer * spec.handling * highSpeedSteering * airControl * wheelieSteering * driftSteering * waterSteering * moving * (state.velocity >= 0 ? 1 : -1) * dt;
 
     // 차체는 먼저 꺾이고 실제 이동 방향은 늦게 따라오므로 드리프트 중 옆으로 미끄러집니다.
     const headingDelta = Math.atan2(
@@ -2265,6 +2316,17 @@
     const previous = state.position.clone();
     state.position.x += Math.sin(state.travelHeading) * state.velocity * dt;
     state.position.z += Math.cos(state.travelHeading) * state.velocity * dt;
+    if (riverFlowBeforeMove && inWaterBeforeMove) {
+      // 강 중앙에서는 더 강한 물살이 하류 방향으로 차량을 직접 밀어냅니다.
+      state.position.x += riverFlowBeforeMove.x * riverFlowBeforeMove.speed * dt;
+      state.position.z += riverFlowBeforeMove.z * riverFlowBeforeMove.speed * dt;
+      const flowHeading = Math.atan2(riverFlowBeforeMove.x, riverFlowBeforeMove.z);
+      const flowHeadingDelta = Math.atan2(
+        Math.sin(flowHeading - state.travelHeading),
+        Math.cos(flowHeading - state.travelHeading)
+      );
+      state.travelHeading += flowHeadingDelta * riverFlowBeforeMove.centerStrength * .24 * dt;
+    }
     state.position.x += state.knockback.x * dt;
     state.position.z += state.knockback.y * dt;
     state.knockback.multiplyScalar(Math.exp(-4.8 * dt));
