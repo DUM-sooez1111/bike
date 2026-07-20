@@ -616,7 +616,8 @@
   function addMountainRoad(mountainTerrain, points, width = 16) {
     const controls = points.map(([x, z]) => new THREE.Vector3(x, 0, z));
     const curve = new THREE.CatmullRomCurve3(controls, false, "centripetal", .5);
-    const samples = curve.getPoints(120);
+    // 긴 산악도로의 곡선이 각져 보이지 않도록 충분히 촘촘하게 나눕니다.
+    const samples = curve.getPoints(180);
     const positions = [];
     const indices = [];
     const wallPositions = [];
@@ -646,16 +647,34 @@
       return { point, leftX, leftZ, rightX, rightZ, leftGround, rightGround, roadY };
     });
 
+    // 주변 높이를 여러 번 섞어 짧고 급격한 단차를 없애고 정상 방향으로 계속 올라가게 합니다.
+    for (let pass = 0; pass < 6; pass += 1) {
+      const smoothedHeights = roadSamples.map(sample => sample.roadY);
+      for (let index = 1; index < roadSamples.length - 1; index += 1) {
+        smoothedHeights[index] = (
+          roadSamples[index - 1].roadY +
+          roadSamples[index].roadY * 2 +
+          roadSamples[index + 1].roadY
+        ) / 4;
+      }
+      roadSamples.forEach((sample, index) => { sample.roadY = smoothedHeights[index]; });
+    }
+    for (let index = 1; index < roadSamples.length; index += 1) {
+      roadSamples[index].roadY = Math.max(roadSamples[index].roadY, roadSamples[index - 1].roadY);
+    }
+
+    // 모든 구간이 정점을 공유하는 하나의 삼각형 스트립을 사용해 노면 이음새를 제거합니다.
+    roadSamples.forEach(sample => {
+      positions.push(
+        sample.leftX, sample.roadY, sample.leftZ,
+        sample.rightX, sample.roadY, sample.rightZ
+      );
+    });
+
     for (let index = 1; index < roadSamples.length; index += 1) {
       const previous = roadSamples[index - 1];
       const current = roadSamples[index];
-      const offset = positions.length / 3;
-      positions.push(
-        previous.leftX, previous.roadY, previous.leftZ,
-        previous.rightX, previous.roadY, previous.rightZ,
-        current.leftX, current.roadY, current.leftZ,
-        current.rightX, current.roadY, current.rightZ
-      );
+      const offset = (index - 1) * 2;
       indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
 
       const addWall = (ax, az, ay, aGround, bx, bz, by, bGround) => {
@@ -691,6 +710,8 @@
     geometry.computeVertexNormals();
     const material = MAT.road.clone();
     material.side = THREE.DoubleSide;
+    material.flatShading = false;
+    material.needsUpdate = true;
     const road = new THREE.Mesh(geometry, material);
     road.receiveShadow = true;
     world.add(road);
