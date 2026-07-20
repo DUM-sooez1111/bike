@@ -182,7 +182,7 @@
     { name: "북쪽 대평원", copy: "확장된 맵의 북쪽 끝을 달리는 넓은 초원", icon: "🧭", x: 80, z: 575, heading: Math.PI, unlockMinutes: 0 },
     { name: "동쪽 황야", copy: "긴 도로와 거대한 언덕이 이어지는 외곽 지역", icon: "🏜️", x: 585, z: -265, heading: -Math.PI / 2, unlockMinutes: 0 },
     { name: "서쪽 끝자락", copy: "초장거리 직선 도로의 서쪽 종점", icon: "🌄", x: -620, z: 42, heading: Math.PI / 2, unlockMinutes: 0 },
-    { name: "거대 설산", copy: "산악도로를 따라 초대형 설산 정상까지 오르는 코스", icon: "🏔️", x: -540, z: -345, heading: Math.PI, unlockMinutes: 0 }
+    { name: "거대 설산", copy: "산악도로를 따라 초대형 설산 정상까지 오르는 코스", icon: "🏔️", x: -540, z: -330, heading: Math.PI, unlockMinutes: 0 }
   );
 
   const PAINTS = [
@@ -540,7 +540,7 @@
   addRoadPath([[85,244],[42,252],[-18,258],[-82,260],[-150,258],[-175,315],[-285,330],[-405,375],[-575,430]], 10);
   addRoadPath([[105,245],[185,275],[275,315],[380,360],[545,430]], 10);
   addRoadPath([[42,252],[35,340],[52,430],[75,515],[80,620]], 10);
-  addRoadPath([[-565,-315],[-565,-340],[-555,-358],[-540,-372]], 12, MAT.dirt);
+  addRoadPath([[-565,-315],[-565,-330],[-555,-344],[-540,-355]], 12, MAT.dirt);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 15, MAT.dirt, 0, false);
@@ -619,40 +619,69 @@
     const samples = curve.getPoints(120);
     const positions = [];
     const indices = [];
+    const wallPositions = [];
+    const wallIndices = [];
     const roadSegments = [];
     const heightAt = (x, z) => {
       const distance = Math.hypot(x - mountainTerrain.x, z - mountainTerrain.z);
       return mountainTerrain.height * THREE.MathUtils.clamp(1 - distance / mountainTerrain.radius, 0, 1);
     };
 
-    // 급한 헤어핀에서 도로 좌우가 뒤집혀 거대한 삼각형이 생기지 않도록 구간별 사각형으로 만듭니다.
-    for (let index = 1; index < samples.length; index += 1) {
-      const previous = samples[index - 1];
-      const point = samples[index];
-      const tangentX = point.x - previous.x;
-      const tangentZ = point.z - previous.z;
+    // 도로 폭 방향은 평평하게 만들고 산과 생기는 틈은 옹벽으로 받쳐 실제로 주행 가능한 노면을 만듭니다.
+    const roadSamples = samples.map((point, index) => {
+      const previous = samples[Math.max(0, index - 1)];
+      const next = samples[Math.min(samples.length - 1, index + 1)];
+      const tangentX = next.x - previous.x;
+      const tangentZ = next.z - previous.z;
       const tangentLength = Math.max(Math.hypot(tangentX, tangentZ), .001);
       const sideX = tangentZ / tangentLength;
       const sideZ = -tangentX / tangentLength;
-      const previousLeftX = previous.x + sideX * width / 2;
-      const previousLeftZ = previous.z + sideZ * width / 2;
-      const previousRightX = previous.x - sideX * width / 2;
-      const previousRightZ = previous.z - sideZ * width / 2;
-      const currentLeftX = point.x + sideX * width / 2;
-      const currentLeftZ = point.z + sideZ * width / 2;
-      const currentRightX = point.x - sideX * width / 2;
-      const currentRightZ = point.z - sideZ * width / 2;
+      const leftX = point.x + sideX * width / 2;
+      const leftZ = point.z + sideZ * width / 2;
+      const rightX = point.x - sideX * width / 2;
+      const rightZ = point.z - sideZ * width / 2;
+      const leftGround = heightAt(leftX, leftZ);
+      const rightGround = heightAt(rightX, rightZ);
+      const roadY = Math.max(heightAt(point.x, point.z), leftGround, rightGround) + .28;
+      return { point, leftX, leftZ, rightX, rightZ, leftGround, rightGround, roadY };
+    });
+
+    for (let index = 1; index < roadSamples.length; index += 1) {
+      const previous = roadSamples[index - 1];
+      const current = roadSamples[index];
       const offset = positions.length / 3;
       positions.push(
-        previousLeftX, heightAt(previousLeftX, previousLeftZ) + .16, previousLeftZ,
-        previousRightX, heightAt(previousRightX, previousRightZ) + .16, previousRightZ,
-        currentLeftX, heightAt(currentLeftX, currentLeftZ) + .16, currentLeftZ,
-        currentRightX, heightAt(currentRightX, currentRightZ) + .16, currentRightZ
+        previous.leftX, previous.roadY, previous.leftZ,
+        previous.rightX, previous.roadY, previous.rightZ,
+        current.leftX, current.roadY, current.leftZ,
+        current.rightX, current.roadY, current.rightZ
       );
       indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
+
+      const addWall = (ax, az, ay, aGround, bx, bz, by, bGround) => {
+        const wallOffset = wallPositions.length / 3;
+        wallPositions.push(
+          ax, ay - .03, az,
+          ax, aGround + .02, az,
+          bx, by - .03, bz,
+          bx, bGround + .02, bz
+        );
+        wallIndices.push(
+          wallOffset, wallOffset + 2, wallOffset + 1,
+          wallOffset + 1, wallOffset + 2, wallOffset + 3
+        );
+      };
+      addWall(
+        previous.leftX, previous.leftZ, previous.roadY, previous.leftGround,
+        current.leftX, current.leftZ, current.roadY, current.leftGround
+      );
+      addWall(
+        previous.rightX, previous.rightZ, previous.roadY, previous.rightGround,
+        current.rightX, current.rightZ, current.roadY, current.rightGround
+      );
       roadSegments.push({
-        ax: previous.x, az: previous.z,
-        bx: point.x, bz: point.z
+        ax: previous.point.x, az: previous.point.z, ay: previous.roadY,
+        bx: current.point.x, bz: current.point.z, by: current.roadY
       });
     }
 
@@ -666,8 +695,17 @@
     road.receiveShadow = true;
     world.add(road);
 
-    const centerLinePoints = samples.map(point =>
-      new THREE.Vector3(point.x, heightAt(point.x, point.z) + .25, point.z)
+    const wallGeometry = new THREE.BufferGeometry();
+    wallGeometry.setAttribute("position", new THREE.Float32BufferAttribute(wallPositions, 3));
+    wallGeometry.setIndex(wallIndices);
+    wallGeometry.computeVertexNormals();
+    const retainingWalls = new THREE.Mesh(wallGeometry, MAT.concreteDark);
+    retainingWalls.castShadow = true;
+    retainingWalls.receiveShadow = true;
+    world.add(retainingWalls);
+
+    const centerLinePoints = roadSamples.map(sample =>
+      new THREE.Vector3(sample.point.x, sample.roadY + .06, sample.point.z)
     );
     const centerLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(centerLinePoints),
@@ -704,7 +742,7 @@
     const mountainTerrain = { type: "hill", x, z, radius, height, giant: true };
     terrainSurfaces.push(mountainTerrain);
     addMountainRoad(mountainTerrain, [
-      [-540, -372],
+      [-540, -355],
       [-635, -445],
       [-640, -570],
       [-465, -630],
@@ -1958,9 +1996,12 @@
         return { height: progress * ramp.height, pitch: -Math.atan2(ramp.height, ramp.length), ramp, progress };
       }
     }
-    // 설산 도로 위에서는 도로 아래의 산 경사를 그대로 사용해 차가 노면에 자연스럽게 붙습니다.
+    // 설산 도로에서는 가장 가까운 노면 구간의 높이와 종방향 경사를 사용합니다.
     for (const road of mountainRoadSurfaces) {
-      const onRoad = road.segments.some(segment => {
+      let closestSegment = null;
+      let closestT = 0;
+      let closestDistance = Infinity;
+      road.segments.forEach(segment => {
         const segmentX = segment.bx - segment.ax;
         const segmentZ = segment.bz - segment.az;
         const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
@@ -1968,23 +2009,31 @@
           ? ((position.x - segment.ax) * segmentX + (position.z - segment.az) * segmentZ) / lengthSquared
           : 0;
         const t = THREE.MathUtils.clamp(projection, 0, 1);
-        return Math.hypot(
+        const distance = Math.hypot(
           position.x - (segment.ax + segmentX * t),
           position.z - (segment.az + segmentZ * t)
-        ) <= road.width / 2 + margin;
+        );
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestSegment = segment;
+          closestT = t;
+        }
       });
-      if (!onRoad) continue;
+      if (!closestSegment || closestDistance > road.width / 2 + margin) continue;
       const mountain = road.mountain;
       const dx = position.x - mountain.x;
       const dz = position.z - mountain.z;
       const distance = Math.hypot(dx, dz);
       const progress = THREE.MathUtils.clamp(1 - distance / mountain.radius, 0, 1);
-      const slope = mountain.height / mountain.radius;
+      const segmentX = closestSegment.bx - closestSegment.ax;
+      const segmentZ = closestSegment.bz - closestSegment.az;
+      const segmentLength = Math.max(Math.hypot(segmentX, segmentZ), .001);
+      const longitudinalSlope = (closestSegment.by - closestSegment.ay) / segmentLength;
       return {
-        height: mountain.height * progress + .16,
+        height: THREE.MathUtils.lerp(closestSegment.ay, closestSegment.by, closestT),
         pitch: 0,
-        gradientX: distance > .01 ? -slope * dx / distance : 0,
-        gradientZ: distance > .01 ? -slope * dz / distance : 0,
+        gradientX: longitudinalSlope * segmentX / segmentLength,
+        gradientZ: longitudinalSlope * segmentZ / segmentLength,
         ramp: null,
         terrain: mountain,
         progress
