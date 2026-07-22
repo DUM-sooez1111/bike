@@ -771,15 +771,47 @@
     });
     world.add(guardrailGroup);
 
-    const centerLinePoints = roadSamples.map(sample =>
-      new THREE.Vector3(sample.point.x, sample.roadY + .06, sample.point.z)
+    // 선 재질은 뒷면 구분이 없어 도로 아래에서도 보이므로, 윗면만 렌더링되는 얇은 면으로 차선을 만듭니다.
+    const markingPositions = [];
+    const markingIndices = [];
+    let markingDistance = 0;
+    for (let index = 1; index < roadSamples.length; index += 1) {
+      const previous = roadSamples[index - 1];
+      const current = roadSamples[index];
+      const dx = current.point.x - previous.point.x;
+      const dz = current.point.z - previous.point.z;
+      const length = Math.max(Math.hypot(dx, dz), .001);
+      const midpointDistance = markingDistance + length / 2;
+      markingDistance += length;
+      if (midpointDistance % 10 >= 4.5) continue;
+      const sideX = dz / length * .13;
+      const sideZ = -dx / length * .13;
+      const offset = markingPositions.length / 3;
+      markingPositions.push(
+        previous.point.x + sideX, previous.roadY + .055, previous.point.z + sideZ,
+        previous.point.x - sideX, previous.roadY + .055, previous.point.z - sideZ,
+        current.point.x + sideX, current.roadY + .055, current.point.z + sideZ,
+        current.point.x - sideX, current.roadY + .055, current.point.z - sideZ
+      );
+      // 위쪽에서만 보이도록 정점 순서를 위 방향으로 맞춥니다.
+      markingIndices.push(offset, offset + 1, offset + 2, offset + 1, offset + 3, offset + 2);
+    }
+    const markingGeometry = new THREE.BufferGeometry();
+    markingGeometry.setAttribute("position", new THREE.Float32BufferAttribute(markingPositions, 3));
+    markingGeometry.setIndex(markingIndices);
+    markingGeometry.computeVertexNormals();
+    const centerMarkings = new THREE.Mesh(
+      markingGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xfff0ae,
+        side: THREE.FrontSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2
+      })
     );
-    const centerLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(centerLinePoints),
-      new THREE.LineDashedMaterial({ color: 0xfff0ae, dashSize: 4.5, gapSize: 5.5 })
-    );
-    centerLine.computeLineDistances();
-    world.add(centerLine);
+    centerMarkings.renderOrder = 2;
+    world.add(centerMarkings);
     mountainRoadSurfaces.push({ mountain: mountainTerrain, width, segments: roadSegments });
   }
 
