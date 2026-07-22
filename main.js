@@ -757,30 +757,64 @@
   // 캔버스로 만든 경고 이미지라서 별도 이미지 파일이나 인터넷 연결이 필요 없습니다.
   function addObstacleSign(x, z, rotationY = 0) {
     const signCanvas = document.createElement("canvas");
-    signCanvas.width = 256;
-    signCanvas.height = 160;
+    signCanvas.width = 512;
+    signCanvas.height = 320;
     const ctx = signCanvas.getContext("2d");
     ctx.fillStyle = "#f6c247";
-    ctx.fillRect(0, 0, 256, 160);
+    ctx.fillRect(0, 0, 512, 320);
+
+    // Draw the warning symbol with paths instead of an emoji so every device renders it.
+    ctx.strokeStyle = "#171d20";
+    ctx.lineWidth = 24;
+    ctx.lineJoin = "round";
+    ctx.strokeRect(14, 14, 484, 292);
     ctx.fillStyle = "#171d20";
-    ctx.fillRect(0, 0, 256, 16);
-    ctx.fillRect(0, 144, 256, 16);
-    ctx.font = "bold 74px sans-serif";
+    ctx.beginPath();
+    ctx.moveTo(256, 48);
+    ctx.lineTo(348, 202);
+    ctx.lineTo(164, 202);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#f6c247";
+    ctx.fillRect(247, 91, 18, 65);
+    ctx.beginPath();
+    ctx.arc(256, 178, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#171d20";
+    ctx.font = "900 50px Arial, 'Noto Sans KR', sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("⚠", 128, 84);
-    ctx.font = "bold 27px sans-serif";
-    ctx.fillText("장애물 구역", 128, 128);
-    const signMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas), side: THREE.DoubleSide });
+    ctx.textBaseline = "middle";
+    ctx.fillText("장애물 구역", 256, 257);
+
+    const texture = new THREE.CanvasTexture(signCanvas);
+    texture.encoding = THREE.sRGBEncoding;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    texture.needsUpdate = true;
+    const signMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
     const group = new THREE.Group();
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 3), signMaterial);
-    board.position.y = 3.6;
-    const pole = new THREE.Mesh(new THREE.BoxGeometry(.28, 3.8, .28), MAT.dark);
-    pole.position.y = 1.9;
-    group.add(board, pole);
+    const boardBack = new THREE.Mesh(new THREE.BoxGeometry(5.15, 3.25, .2), MAT.dark);
+    boardBack.position.y = 3.65;
+    boardBack.castShadow = true;
+
+    // Separate front and rear decals keep the Korean text readable from both sides.
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(4.85, 3.02), signMaterial);
+    front.position.set(0, 3.65, .106);
+    const rear = new THREE.Mesh(new THREE.PlaneGeometry(4.85, 3.02), signMaterial.clone());
+    rear.position.set(0, 3.65, -.106);
+    rear.rotation.y = Math.PI;
+
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(.32, 3.9, .32), MAT.dark);
+    pole.position.y = 1.95;
+    pole.castShadow = true;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.05, .18, .78), MAT.concreteDark);
+    base.position.y = .09;
+    base.castShadow = true;
+    group.add(boardBack, front, rear, pole, base);
     group.position.set(x, 0, z);
     group.rotation.y = rotationY;
     world.add(group);
-    colliders.push({ minX: x - .45, maxX: x + .45, minZ: z - .45, maxZ: z + .45, maxY: 5.1 });
+    colliders.push({ minX: x - .55, maxX: x + .55, minZ: z - .55, maxZ: z + .55, maxY: 5.3 });
   }
   addObstacleSign(-133, 66, Math.PI);
   addObstacleSign(-194, 156, 0);
