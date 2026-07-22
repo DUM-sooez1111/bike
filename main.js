@@ -386,7 +386,12 @@
       const s = Math.abs(Math.sin(rotationY));
       const extentX = (width * c + depth * s) / 2;
       const extentZ = (width * s + depth * c) / 2;
-      colliders.push({ minX: x - extentX, maxX: x + extentX, minZ: z - extentZ, maxZ: z + extentZ, maxY: y + height / 2 });
+      colliders.push({
+        minX: x - extentX, maxX: x + extentX,
+        minZ: z - extentZ, maxZ: z + extentZ,
+        minY: y - height / 2,
+        maxY: y + height / 2
+      });
     }
     return mesh;
   }
@@ -725,6 +730,47 @@
     retainingWalls.receiveShadow = true;
     world.add(retainingWalls);
 
+    // 산악도로 양쪽에 낮은 난간을 설치해 급커브와 높은 구간의 경계를 쉽게 알아볼 수 있게 합니다.
+    const guardrailGroup = new THREE.Group();
+    const beamForward = new THREE.Vector3(0, 0, 1);
+    const addGuardrailBeam = (from, to) => {
+      const direction = to.clone().sub(from);
+      const length = direction.length();
+      if (length < .01) return;
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(.18, .18, length), MAT.roadEdge);
+      beam.position.copy(from).add(to).multiplyScalar(.5);
+      beam.quaternion.setFromUnitVectors(beamForward, direction.normalize());
+      beam.castShadow = true;
+      guardrailGroup.add(beam);
+    };
+
+    ["left", "right"].forEach(side => {
+      const railPoints = roadSamples.map(sample => new THREE.Vector3(
+        side === "left" ? sample.leftX : sample.rightX,
+        sample.roadY + 1.02,
+        side === "left" ? sample.leftZ : sample.rightZ
+      ));
+      for (let index = 1; index < railPoints.length; index += 1) {
+        addGuardrailBeam(railPoints[index - 1], railPoints[index]);
+      }
+      for (let index = 0; index < roadSamples.length; index += 8) {
+        const sample = roadSamples[index];
+        const x = side === "left" ? sample.leftX : sample.rightX;
+        const z = side === "left" ? sample.leftZ : sample.rightZ;
+        const post = new THREE.Mesh(new THREE.BoxGeometry(.24, 1.16, .24), MAT.roadEdge);
+        post.position.set(x, sample.roadY + .58, z);
+        post.castShadow = true;
+        guardrailGroup.add(post);
+        colliders.push({
+          minX: x - .2, maxX: x + .2,
+          minZ: z - .2, maxZ: z + .2,
+          minY: sample.roadY,
+          maxY: sample.roadY + 1.2
+        });
+      }
+    });
+    world.add(guardrailGroup);
+
     const centerLinePoints = roadSamples.map(sample =>
       new THREE.Vector3(sample.point.x, sample.roadY + .06, sample.point.z)
     );
@@ -764,13 +810,17 @@
     terrainSurfaces.push(mountainTerrain);
     addMountainRoad(mountainTerrain, [
       [-540, -355],
-      [-635, -445],
-      [-640, -570],
-      [-465, -630],
-      [-435, -530],
-      [-545, -475],
-      [-560, -545],
-      [-510, -555],
+      // 평지 진입로의 진행 방향을 이어받은 뒤 산을 시계 방향으로 부드럽게 감아 올라갑니다.
+      [-500, -375],
+      [-455, -420],
+      [-410, -500],
+      [-430, -590],
+      [-510, -625],
+      [-585, -580],
+      [-580, -520],
+      [-545, -490],
+      [-500, -505],
+      [-500, -540],
       [x, z]
     ], 17);
   }
@@ -1651,7 +1701,11 @@
       const radius = aiCollisionRadius(ai);
       for (const box of colliders) {
         const contact = getBoxContact(box, ai.root.position, radius);
-        if (contact && ai.root.position.y < (box.maxY ?? 3.2) + .55) {
+        if (
+          contact &&
+          ai.root.position.y < (box.maxY ?? 3.2) + .55 &&
+          ai.root.position.y > (box.minY ?? -Infinity) - .55
+        ) {
           if (ai.collisionCooldown <= 0) applyAIBounce(ai, contact.normalX, contact.normalZ, ai.speed);
           ai.root.position.x = contact.x;
           ai.root.position.z = contact.z;
@@ -2267,7 +2321,11 @@
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
       const contact = getBoxContact(box, state.position, radius);
-      if (contact && state.position.y < (box.maxY ?? 3.2) + .55) {
+      if (
+        contact &&
+        state.position.y < (box.maxY ?? 3.2) + .55 &&
+        state.position.y > (box.minY ?? -Infinity) - .55
+      ) {
         if (state.collisionCooldown <= 0) applyCollisionBounce(contact.normalX, contact.normalZ, previous);
         state.position.x = contact.x;
         state.position.z = contact.z;
