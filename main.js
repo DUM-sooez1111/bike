@@ -188,6 +188,16 @@
     { name: "거대 설산", copy: "산악도로를 따라 초대형 설산 정상까지 오르는 코스", icon: "🏔️", x: -540, z: -330, heading: Math.PI, unlockMinutes: 0 }
   );
 
+  DESTINATIONS.push({
+    name: "그랜드 레이싱 서킷",
+    copy: "넓은 코너와 긴 직선, 안전 난간이 있는 대형 트랙",
+    icon: "🏁",
+    x: 196,
+    z: -500,
+    heading: Math.PI,
+    unlockMinutes: 0
+  });
+
   const PAINTS = [
     { name: "선셋 오렌지", value: 0xf05a35 },
     { name: "볼트 블루", value: 0x3575ff },
@@ -354,6 +364,7 @@
   const ramps = [];
   const terrainSurfaces = [];
   const mountainRoadSurfaces = [];
+  const elevatedRoadSurfaces = [];
   const waterZones = [];
   const roadSegments = [];
   const WATER_LEVEL = .18;
@@ -504,6 +515,167 @@
     }
   }
 
+  // Large closed racing circuit in the south-east field. The sampled centerline is
+  // also registered as driveable road so later trees and rocks stay off the track.
+  function addRacingCircuit() {
+    const width = 19;
+    const controlPoints = [
+      [188, -500], [220, -570], [310, -618], [425, -612], [515, -568],
+      [548, -500], [526, -430], [452, -392], [350, -386], [258, -414], [202, -454]
+    ].map(([x, z]) => new THREE.Vector3(x, .065, z));
+    const curve = new THREE.CatmullRomCurve3(controlPoints, true, "centripetal", .5);
+    const samples = curve.getSpacedPoints(108);
+    samples.pop();
+
+    const vertices = [];
+    const indices = [];
+    const trackSamples = samples.map((point, index) => {
+      const previous = samples[(index - 1 + samples.length) % samples.length];
+      const next = samples[(index + 1) % samples.length];
+      const tangent = next.clone().sub(previous);
+      const tangentLength = Math.max(Math.hypot(tangent.x, tangent.z), .001);
+      const sideX = tangent.z / tangentLength;
+      const sideZ = -tangent.x / tangentLength;
+      return {
+        point,
+        sideX,
+        sideZ,
+        left: new THREE.Vector3(point.x + sideX * width / 2, point.y, point.z + sideZ * width / 2),
+        right: new THREE.Vector3(point.x - sideX * width / 2, point.y, point.z - sideZ * width / 2)
+      };
+    });
+
+    trackSamples.forEach((sample, index) => {
+      vertices.push(sample.left.x, sample.left.y, sample.left.z, sample.right.x, sample.right.y, sample.right.z);
+      const nextIndex = (index + 1) % trackSamples.length;
+      const offset = index * 2;
+      const nextOffset = nextIndex * 2;
+      indices.push(offset, nextOffset, offset + 1, offset + 1, nextOffset, nextOffset + 1);
+
+      const next = trackSamples[nextIndex].point;
+      roadSegments.push({ ax: sample.point.x, az: sample.point.z, bx: next.x, bz: next.z, width });
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const trackMaterial = MAT.road.clone();
+    trackMaterial.side = THREE.DoubleSide;
+    // Prevent distant ground triangles from flickering through the circuit surface.
+    trackMaterial.polygonOffset = true;
+    trackMaterial.polygonOffsetFactor = -2;
+    trackMaterial.polygonOffsetUnits = -2;
+    const track = new THREE.Mesh(geometry, trackMaterial);
+    track.receiveShadow = true;
+    world.add(track);
+
+    // Dashed racing line and alternating red/white kerbs make corners easy to read.
+    const centerPoints = samples.concat(samples[0]).map(point => new THREE.Vector3(point.x, point.y + .055, point.z));
+    const centerLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(centerPoints),
+      new THREE.LineDashedMaterial({ color: 0xf7edcf, dashSize: 5, gapSize: 7 })
+    );
+    centerLine.computeLineDistances();
+    world.add(centerLine);
+
+    const redKerb = flatMaterial(0xe94343, .82);
+    const whiteKerb = flatMaterial(0xf5f0df, .82);
+    const railGroup = new THREE.Group();
+    const beamForward = new THREE.Vector3(0, 0, 1);
+    const addRailBeam = (from, to) => {
+      const direction = to.clone().sub(from);
+      const length = direction.length();
+      if (length < .01) return;
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(.22, .24, length), MAT.roadEdge);
+      beam.position.copy(from).add(to).multiplyScalar(.5);
+      beam.quaternion.setFromUnitVectors(beamForward, direction.normalize());
+      beam.castShadow = true;
+      railGroup.add(beam);
+      guardrailColliders.push({
+        ax: from.x, ay: from.y, az: from.z,
+        bx: to.x, by: to.y, bz: to.z,
+        radius: .24
+      });
+    };
+
+    for (let index = 0; index < trackSamples.length; index += 2) {
+      const current = trackSamples[index];
+      const next = trackSamples[(index + 2) % trackSamples.length];
+      const curbLength = current.point.distanceTo(next.point) + .3;
+      const heading = Math.atan2(next.point.x - current.point.x, next.point.z - current.point.z);
+      [current.left, current.right].forEach(edge => {
+        const curb = new THREE.Mesh(
+          new THREE.BoxGeometry(1.05, .11, curbLength),
+          index % 4 === 0 ? redKerb : whiteKerb
+        );
+        curb.position.set(edge.x, .11, edge.z);
+        curb.rotation.y = heading;
+        curb.receiveShadow = true;
+        world.add(curb);
+      });
+
+      // Leave a wide opening beside the start line for the connector/pit entrance.
+      const entranceGap = index <= 4 || index >= trackSamples.length - 4;
+      if (!entranceGap) {
+        [1, -1].forEach(side => {
+          const railOffset = width / 2 + 2.25;
+          const from = new THREE.Vector3(
+            current.point.x + current.sideX * railOffset * side,
+            .82,
+            current.point.z + current.sideZ * railOffset * side
+          );
+          const to = new THREE.Vector3(
+            next.point.x + next.sideX * railOffset * side,
+            .82,
+            next.point.z + next.sideZ * railOffset * side
+          );
+          addRailBeam(from, to);
+          const post = new THREE.Mesh(new THREE.BoxGeometry(.3, 1.15, .3), MAT.roadEdge);
+          post.position.set(from.x, .57, from.z);
+          post.castShadow = true;
+          railGroup.add(post);
+        });
+      }
+    }
+    world.add(railGroup);
+
+    // Checkerboard start/finish stripe and overhead gantry.
+    const start = trackSamples[0];
+    const startNext = trackSamples[1];
+    const startHeading = Math.atan2(startNext.point.x - start.point.x, startNext.point.z - start.point.z);
+    for (let lane = -5; lane <= 5; lane += 1) {
+      for (let row = -1; row <= 1; row += 1) {
+        const tile = new THREE.Mesh(
+          new THREE.BoxGeometry(1.65, .035, 1.15),
+          (lane + row) % 2 === 0 ? MAT.white : MAT.dark
+        );
+        tile.position.set(
+          start.point.x + start.sideX * lane * 1.65 + Math.sin(startHeading) * row * 1.15,
+          .14,
+          start.point.z + start.sideZ * lane * 1.65 + Math.cos(startHeading) * row * 1.15
+        );
+        tile.rotation.y = startHeading;
+        world.add(tile);
+      }
+    }
+    [-1, 1].forEach(side => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(.55, 5.5, .55), MAT.dark);
+      post.position.set(
+        start.point.x + start.sideX * side * (width / 2 + 1.3),
+        2.75,
+        start.point.z + start.sideZ * side * (width / 2 + 1.3)
+      );
+      post.castShadow = true;
+      world.add(post);
+    });
+    const gantry = new THREE.Mesh(new THREE.BoxGeometry(width + 3.2, 1.05, .65), MAT.orange);
+    gantry.position.set(start.point.x, 5.15, start.point.z);
+    gantry.rotation.y = startHeading;
+    gantry.castShadow = true;
+    world.add(gantry);
+  }
+
   // 물리 계산과 정확히 같은 방향을 가진 쐐기형 점프대
   function createRampGeometry(width, length, height) {
     const x = width / 2, z = length / 2;
@@ -550,6 +722,8 @@
   addRoadPath([[105,245],[185,275],[275,315],[380,360],[545,430]], 10);
   addRoadPath([[42,252],[35,340],[52,430],[75,515],[80,620]], 10);
   addRoadPath([[-565,-315],[-565,-330],[-555,-344],[-540,-355]], 12, MAT.dirt);
+  addRacingCircuit();
+  addRoadPath([[68,-490],[115,-492],[155,-497],[188,-500]], 12);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 15, MAT.dirt, 0, false);
@@ -863,6 +1037,87 @@
       [x, z]
     ], 17);
   }
+
+  // A long downhill slide starts near the giant mountain summit and points toward camp.
+  // Its height-aware surface test lets vehicles pass underneath without teleporting up.
+  function addMountainSlide() {
+    const width = 15;
+    const controls = [
+      [-520, 180.15, -535], [-487, 158, -501], [-447, 130, -462],
+      [-400, 101, -414], [-346, 72, -360], [-288, 46, -301],
+      [-225, 26, -238], [-166, 11, -177], [-112, .35, -122]
+    ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const curve = new THREE.CatmullRomCurve3(controls, false, "centripetal", .5);
+    const samples = curve.getSpacedPoints(92);
+    const positions = [];
+    const indices = [];
+    const slideSegments = [];
+    const edges = samples.map((point, index) => {
+      const previous = samples[Math.max(0, index - 1)];
+      const next = samples[Math.min(samples.length - 1, index + 1)];
+      const dx = next.x - previous.x;
+      const dz = next.z - previous.z;
+      const length = Math.max(Math.hypot(dx, dz), .001);
+      const sideX = dz / length;
+      const sideZ = -dx / length;
+      return {
+        point,
+        left: new THREE.Vector3(point.x + sideX * width / 2, point.y, point.z + sideZ * width / 2),
+        right: new THREE.Vector3(point.x - sideX * width / 2, point.y, point.z - sideZ * width / 2)
+      };
+    });
+
+    edges.forEach((edge, index) => {
+      positions.push(edge.left.x, edge.left.y, edge.left.z, edge.right.x, edge.right.y, edge.right.z);
+      if (index < edges.length - 1) {
+        const offset = index * 2;
+        indices.push(offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3);
+        const next = edges[index + 1].point;
+        slideSegments.push({
+          ax: edge.point.x, ay: edge.point.y, az: edge.point.z,
+          bx: next.x, by: next.y, bz: next.z
+        });
+      }
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const slideMaterial = flatMaterial(0x59bfe8, .72, .04);
+    slideMaterial.side = THREE.DoubleSide;
+    const slide = new THREE.Mesh(geometry, slideMaterial);
+    slide.receiveShadow = true;
+    slide.castShadow = true;
+    world.add(slide);
+
+    const wallMaterial = flatMaterial(0xf2e7ba, .82);
+    const wallGroup = new THREE.Group();
+    const beamForward = new THREE.Vector3(0, 0, 1);
+    for (let index = 0; index < edges.length - 1; index += 2) {
+      const nextIndex = Math.min(index + 2, edges.length - 1);
+      ["left", "right"].forEach(side => {
+        const from = edges[index][side].clone();
+        const to = edges[nextIndex][side].clone();
+        from.y += .72;
+        to.y += .72;
+        const direction = to.clone().sub(from);
+        const length = direction.length();
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(.32, 1.25, length), wallMaterial);
+        wall.position.copy(from).add(to).multiplyScalar(.5);
+        wall.quaternion.setFromUnitVectors(beamForward, direction.normalize());
+        wall.castShadow = true;
+        wallGroup.add(wall);
+        guardrailColliders.push({
+          ax: from.x, ay: from.y, az: from.z,
+          bx: to.x, by: to.y, bz: to.z,
+          radius: .3
+        });
+      });
+    }
+    world.add(wallGroup);
+    elevatedRoadSurfaces.push({ width, segments: slideSegments });
+  }
   addHill(-282, -52, 37, 17);
   addHill(246, -82, 48, 24, MAT.grassLight);
   addHill(275, 135, 31, 14);
@@ -874,6 +1129,7 @@
   addHill(-485, 505, 68, 33, MAT.grassLight);
   addHill(0, 575, 50, 24, MAT.grassDark);
   addGiantMountain(-520, -535, 165, 180);
+  addMountainSlide();
 
   function overlapsHill(x, z, clearance = 0) {
     return terrainSurfaces.some(terrain =>
@@ -1842,6 +2098,20 @@
     }
     normalX /= length;
     normalZ /= length;
+    const forwardX = Math.sin(ai.heading);
+    const forwardZ = Math.cos(ai.heading);
+    const approach = Math.max(0, -(forwardX * normalX + forwardZ * normalZ));
+    if (approach < .46) {
+      const dot = forwardX * normalX + forwardZ * normalZ;
+      const tangentX = forwardX - dot * normalX;
+      const tangentZ = forwardZ - dot * normalZ;
+      if (Math.hypot(tangentX, tangentZ) > .05) ai.heading = Math.atan2(tangentX, tangentZ);
+      ai.knockbackOffset.x += normalX * .16;
+      ai.knockbackOffset.y += normalZ * .16;
+      ai.speedScale = Math.min(ai.speedScale, .84);
+      ai.collisionCooldown = .1;
+      return;
+    }
     const impulse = THREE.MathUtils.clamp(3.8 + impactSpeed * .38, 4, 14);
     ai.knockbackVelocity.x += normalX * impulse;
     ai.knockbackVelocity.y += normalZ * impulse;
@@ -1996,7 +2266,8 @@
       opacity: 0,
       depthWrite: false,
       polygonOffset: true,
-      polygonOffsetFactor: -2
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1
     });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, .018, 1), material);
     mesh.visible = false;
@@ -2015,7 +2286,7 @@
     track.age = 0;
     track.strength = strength;
     track.mesh.visible = true;
-    track.mesh.position.set((start.x + end.x) / 2, surfaceY + .035, (start.z + end.z) / 2);
+    track.mesh.position.set((start.x + end.x) / 2, surfaceY + .085, (start.z + end.z) / 2);
     track.mesh.rotation.set(0, Math.atan2(dx, dz), 0);
     track.mesh.scale.set(width, 1, length + .08);
     track.mesh.material.opacity = strength;
@@ -2034,7 +2305,8 @@
       }
     });
 
-    if (!state.grounded || state.inWater || Math.abs(state.velocity) < 3) {
+    const leavingMarks = state.drift > .08 || (keys.shift && Math.abs(state.velocity) > 8);
+    if (!state.grounded || state.inWater || Math.abs(state.velocity) < 3 || !leavingMarks) {
       previousTrackPoints = null;
       return;
     }
@@ -2067,7 +2339,9 @@
     }
     if (movement < .38) return;
 
-    const strength = THREE.MathUtils.lerp(.24, .68, state.drift);
+    const strength = keys.shift
+      ? THREE.MathUtils.lerp(.28, .54, Math.min(Math.abs(state.velocity) / 24, 1))
+      : THREE.MathUtils.lerp(.18, .68, state.drift);
     const width = isBike ? .14 : THREE.MathUtils.lerp(.16, .24, state.drift);
     currentPoints.forEach((point, index) => {
       placeTireTrack(previousTrackPoints[index], point, width, strength, state.position.y);
@@ -2181,8 +2455,13 @@
     inWater: false,
     boostCharge: 1,
     boosting: false,
-    displayedSpeed: 0
+    displayedSpeed: 0,
+    waterSubmersion: 0,
+    waterLift: 0,
+    waterVelocity: new THREE.Vector2(),
+    wasInWater: false
   };
+  const waterVelocityTarget = new THREE.Vector2();
   const PHYSICS = {
     reverseAcceleration: 11,
     maxReverse: 13,
@@ -2214,6 +2493,10 @@
     state.knockback.set(0, 0);
     state.collisionCooldown = 0;
     state.inWater = isPositionInWater(state.position);
+    state.waterSubmersion = 0;
+    state.waterLift = 0;
+    state.waterVelocity.set(0, 0);
+    state.wasInWater = state.inWater;
     state.boosting = false;
     state.displayedSpeed = 0;
     vehicleVisual.body.rotation.set(0, 0, 0);
@@ -2244,6 +2527,44 @@
       }
     }
     // 설산 도로에서는 가장 가까운 노면 구간의 높이와 종방향 경사를 사용합니다.
+    for (const road of elevatedRoadSurfaces) {
+      let closest = null;
+      let closestDistance = Infinity;
+      let closestT = 0;
+      road.segments.forEach(segment => {
+        const dx = segment.bx - segment.ax;
+        const dz = segment.bz - segment.az;
+        const lengthSquared = dx * dx + dz * dz;
+        const t = lengthSquared > .001
+          ? THREE.MathUtils.clamp(((position.x - segment.ax) * dx + (position.z - segment.az) * dz) / lengthSquared, 0, 1)
+          : 0;
+        const x = segment.ax + dx * t;
+        const z = segment.az + dz * t;
+        const distance = Math.hypot(position.x - x, position.z - z);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = segment;
+          closestT = t;
+        }
+      });
+      if (!closest || closestDistance > road.width / 2 + margin) continue;
+      const height = THREE.MathUtils.lerp(closest.ay, closest.by, closestT);
+      if (height > 2.2 && position.y < height - 1.7) continue;
+      const dx = closest.bx - closest.ax;
+      const dz = closest.bz - closest.az;
+      const length = Math.max(Math.hypot(dx, dz), .001);
+      const slope = (closest.by - closest.ay) / length;
+      return {
+        height,
+        pitch: 0,
+        gradientX: slope * dx / length,
+        gradientZ: slope * dz / length,
+        ramp: null,
+        terrain: null,
+        progress: closestT,
+        elevated: true
+      };
+    }
     for (const road of mountainRoadSurfaces) {
       let closestSegment = null;
       let closestT = 0;
@@ -2396,8 +2717,30 @@
     normalX /= length;
     normalZ /= length;
 
+    const motionSign = state.velocity >= 0 ? 1 : -1;
+    const velocityX = Math.sin(state.travelHeading) * motionSign;
+    const velocityZ = Math.cos(state.travelHeading) * motionSign;
+    const approachDot = velocityX * normalX + velocityZ * normalZ;
+    const normalApproach = Math.max(0, -approachDot);
+    if (normalApproach < .46 && Math.abs(state.velocity) > .35) {
+      const tangentX = velocityX - approachDot * normalX;
+      const tangentZ = velocityZ - approachDot * normalZ;
+      if (Math.hypot(tangentX, tangentZ) > .05) {
+        const tangentHeading = Math.atan2(tangentX * motionSign, tangentZ * motionSign);
+        state.travelHeading = tangentHeading;
+        state.heading = THREE.MathUtils.lerp(state.heading, tangentHeading, .24);
+      }
+      state.position.x = previous.x + normalX * .14;
+      state.position.z = previous.z + normalZ * .14;
+      state.knockback.set(normalX * .7, normalZ * .7);
+      state.velocity *= THREE.MathUtils.lerp(.96, .78, normalApproach / .46);
+      state.collisionCooldown = .08;
+      state.roll += THREE.MathUtils.clamp((velocityZ * normalX - velocityX * normalZ) * .035, -.045, .045);
+      return;
+    }
+
     // 충돌면 바깥쪽으로 즉시 밀어내고, 별도의 수평 반동 속도를 감쇠시키며 적용합니다.
-    const impactSpeed = Math.abs(state.velocity);
+    const impactSpeed = Math.abs(state.velocity) * Math.max(normalApproach, .55);
     const impulse = THREE.MathUtils.clamp(4 + impactSpeed * .48 + extraImpact * .16, 4, 19);
     state.position.x = previous.x + normalX * Math.min(.45 + impactSpeed * .025, 1.2);
     state.position.z = previous.z + normalZ * Math.min(.45 + impactSpeed * .025, 1.2);
@@ -2489,6 +2832,23 @@
     return strongestFlow;
   }
 
+  // Lightweight fluid model used by vehicles. It combines water depth, displaced
+  // volume (buoyancy), quadratic drag and the river's local current without a costly
+  // full fluid simulation.
+  function getWaterPhysics(position) {
+    let waterLevel = -Infinity;
+    for (const zone of waterZones) {
+      if (waterCollisionNormal(zone, position)) waterLevel = Math.max(waterLevel, zone.waterLevel ?? WATER_LEVEL);
+    }
+    if (!Number.isFinite(waterLevel)) {
+      return { active: false, depth: 0, submersion: 0, waterLevel: WATER_LEVEL, flow: null };
+    }
+    const depth = waterDepthAt(position.x, position.z);
+    // Shallow shore water starts gently; deep water reaches full effect progressively.
+    const submersion = THREE.MathUtils.smoothstep(depth, .08, 1.55);
+    return { active: true, depth, submersion, waterLevel, flow: getRiverFlow(position) };
+  }
+
   function resolveCollisions(previous) {
     const radius = currentVehicle().type === "bike" ? .85 : 1.5;
     for (const box of colliders) {
@@ -2541,10 +2901,13 @@
     const throttle = keys.w ? 1 : 0;
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
-    const inWaterBeforeMove = isPositionInWater(state.position) && state.position.y < WATER_LEVEL + .3;
-    const riverFlowBeforeMove = getRiverFlow(state.position);
-    const waterPropulsion = inWaterBeforeMove ? .62 : 1;
-    const waterSteering = inWaterBeforeMove ? .7 : 1;
+    const waterBeforeMove = getWaterPhysics(state.position);
+    const inWaterBeforeMove = waterBeforeMove.active && state.position.y < waterBeforeMove.waterLevel + .3;
+    const waterAmount = inWaterBeforeMove ? waterBeforeMove.submersion : 0;
+    const riverFlowBeforeMove = waterBeforeMove.flow;
+    const waterPropulsion = THREE.MathUtils.lerp(1, .62, waterAmount);
+    const hydroplane = THREE.MathUtils.clamp(Math.abs(state.velocity) / 32, 0, 1) * waterAmount;
+    const waterSteering = THREE.MathUtils.lerp(1, .7, waterAmount) * THREE.MathUtils.lerp(1, .78, hydroplane);
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
     const surfaceBeforeMove = getSurfaceInfo(state.position);
@@ -2598,15 +2961,17 @@
     state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed * 1.35);
     if (inWaterBeforeMove) {
       // 물에 닿는 순간 속도를 잘라내지 않고 저항과 제한 속도에 몇 초 동안 부드럽게 수렴합니다.
-      state.velocity *= Math.exp(-.22 * dt);
-      const waterForwardLimit = spec.maxSpeed * .62;
-      const waterReverseLimit = PHYSICS.maxReverse * .72;
+      const relativeSpeed = Math.abs(state.velocity);
+      const quadraticDrag = (.035 + relativeSpeed * .0025) * waterAmount;
+      state.velocity *= Math.exp(-quadraticDrag * dt);
+      const waterForwardLimit = THREE.MathUtils.lerp(spec.maxSpeed, spec.maxSpeed * .62, waterAmount);
+      const waterReverseLimit = THREE.MathUtils.lerp(PHYSICS.maxReverse, PHYSICS.maxReverse * .72, waterAmount);
       if (state.velocity > waterForwardLimit) {
         const excess = state.velocity - waterForwardLimit;
-        state.velocity -= Math.min(excess, (2.2 + excess * .28) * dt);
+        state.velocity -= Math.min(excess, (1.4 + excess * .22) * waterAmount * dt);
       } else if (state.velocity < -waterReverseLimit) {
         const excess = -waterReverseLimit - state.velocity;
-        state.velocity += Math.min(excess, (1.8 + excess * .28) * dt);
+        state.velocity += Math.min(excess, (1.2 + excess * .22) * waterAmount * dt);
       }
     }
     if (state.drift > .02) {
@@ -2634,17 +2999,24 @@
     const previous = state.position.clone();
     state.position.x += Math.sin(state.travelHeading) * state.velocity * dt;
     state.position.z += Math.cos(state.travelHeading) * state.velocity * dt;
+    waterVelocityTarget.set(0, 0);
     if (riverFlowBeforeMove && inWaterBeforeMove) {
       // 강 중앙에서는 더 강한 물살이 하류 방향으로 차량을 직접 밀어냅니다.
-      state.position.x += riverFlowBeforeMove.x * riverFlowBeforeMove.speed * dt;
-      state.position.z += riverFlowBeforeMove.z * riverFlowBeforeMove.speed * dt;
+      waterVelocityTarget.set(
+        riverFlowBeforeMove.x * riverFlowBeforeMove.speed * waterAmount,
+        riverFlowBeforeMove.z * riverFlowBeforeMove.speed * waterAmount
+      );
       const flowHeading = Math.atan2(riverFlowBeforeMove.x, riverFlowBeforeMove.z);
       const flowHeadingDelta = Math.atan2(
         Math.sin(flowHeading - state.travelHeading),
         Math.cos(flowHeading - state.travelHeading)
       );
-      state.travelHeading += flowHeadingDelta * riverFlowBeforeMove.centerStrength * .24 * dt;
+      state.travelHeading += flowHeadingDelta * riverFlowBeforeMove.centerStrength * waterAmount * .18 * dt;
     }
+    const currentResponse = inWaterBeforeMove ? 1.7 : 2.8;
+    state.waterVelocity.lerp(waterVelocityTarget, 1 - Math.exp(-currentResponse * dt));
+    state.position.x += state.waterVelocity.x * dt;
+    state.position.z += state.waterVelocity.y * dt;
     state.position.x += state.knockback.x * dt;
     state.position.z += state.knockback.y * dt;
     state.knockback.multiplyScalar(Math.exp(-4.8 * dt));
@@ -2666,7 +3038,18 @@
 
     const previousSurface = getSurfaceInfo(previous);
     let surface = getSurfaceInfo(state.position);
-    state.inWater = isPositionInWater(state.position) && surface.height < WATER_LEVEL;
+    const waterAfterMove = getWaterPhysics(state.position);
+    state.inWater = waterAfterMove.active && surface.height < waterAfterMove.waterLevel;
+    state.waterSubmersion = state.inWater ? waterAfterMove.submersion : 0;
+    const floatTarget = state.inWater
+      ? Math.min(waterAfterMove.depth * .42, spec.type === "bike" ? .38 : .72) * state.waterSubmersion
+      : 0;
+    state.waterLift = THREE.MathUtils.lerp(state.waterLift, floatTarget, 1 - Math.exp(-2.4 * dt));
+    if (state.inWater && !state.wasInWater) {
+      state.verticalVelocity *= .42;
+      state.roll *= .72;
+    }
+    state.wasInWater = state.inWater;
 
     // 점프대의 높은 뒤쪽이나 옆면에서 경사 높이가 즉시 적용되는 현상을 막습니다.
     // 지상 차량은 낮은 입구로 들어오거나 이미 같은 경사면 위에 있을 때만 올라갈 수 있습니다.
@@ -2722,13 +3105,18 @@
 
     // T를 누르고 전진하면 앞바퀴를 드는 윌리 묘기를 수행합니다.
     // 바이크는 큰 각도, 자동차는 무게에 맞춘 낮은 각도로 연출됩니다.
-    const canWheelie = state.grounded && !surface.ramp && state.velocity > 4;
+    const canWheelie = state.grounded && !state.inWater && !surface.ramp && state.velocity > 4;
     const wheelieTarget = keys.t && canWheelie ? (spec.type === "bike" ? .68 : .27) : 0;
     const wheelieResponse = wheelieTarget > state.wheelie ? 7.5 : 10;
     state.wheelie = THREE.MathUtils.lerp(state.wheelie, wheelieTarget, 1 - Math.exp(-wheelieResponse * dt));
 
     if (!state.grounded) {
-      state.verticalVelocity -= PHYSICS.gravity * dt;
+      const submergedGravity = PHYSICS.gravity * THREE.MathUtils.lerp(1, .28, state.waterSubmersion);
+      state.verticalVelocity -= submergedGravity * dt;
+      if (state.inWater) {
+        state.verticalVelocity += PHYSICS.gravity * .42 * state.waterSubmersion * dt;
+        state.verticalVelocity *= Math.exp(-2.2 * state.waterSubmersion * dt);
+      }
       state.position.y += state.verticalVelocity * dt;
       state.pitch += (-state.verticalVelocity * .0027 - state.pitch * .28) * dt;
       state.roll += steer * (spec.type === "bike" ? .11 : .045) * dt;
@@ -2765,7 +3153,10 @@
     vehicleVisual.body.rotation.x = state.pitch - state.wheelie;
     vehicleVisual.body.rotation.z = state.roll;
     // 회전 중심 때문에 뒷바퀴가 지면 아래로 내려가지 않도록 차체를 함께 들어 줍니다.
-    vehicleVisual.body.position.y = Math.sin(state.wheelie) * (spec.type === "bike" ? 1.48 : 1.35);
+    const waterBob = state.inWater
+      ? Math.sin(performance.now() * .0024 + state.position.x * .035) * .055 * state.waterSubmersion
+      : 0;
+    vehicleVisual.body.position.y = Math.sin(state.wheelie) * (spec.type === "bike" ? 1.48 : 1.35) + state.waterLift + waterBob;
     vehicleVisual.boostJets.forEach((jet, index) => {
       jet.visible = state.boosting;
       if (state.boosting) {
