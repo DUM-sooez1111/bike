@@ -185,9 +185,21 @@ kbd, .prompt-key {
   width: calc(var(--thumb-width) * .22); height: calc(var(--thumb-height) * .75);
   bottom: calc(16px + var(--thumb-height)); border-radius: 50% 50% 3px 3px;
 }
-.vehicle-thumb.variant-1::after, .vehicle-thumb.variant-5::after { transform: translateX(-43%) skewX(calc(var(--thumb-skew) * -.55)); }
-.vehicle-thumb.variant-2::before, .vehicle-thumb.variant-6::before { border-top: 3px solid rgba(255,255,255,.5); }
-.vehicle-thumb.variant-3::after, .vehicle-thumb.variant-7::after { background-color: var(--vehicle-accent); filter: saturate(1.25); }
+.vehicle-thumb.variant-0::before { clip-path: polygon(0 38%, 18% 12%, 76% 5%, 100% 45%, 96% 100%, 3% 100%); }
+.vehicle-thumb.variant-1::before { width: calc(var(--thumb-width) * 1.08); clip-path: polygon(0 55%, 24% 8%, 83% 16%, 100% 62%, 100% 100%, 0 100%); }
+.vehicle-thumb.variant-1::after { transform: translateX(-35%) skewX(calc(var(--thumb-skew) * -.55)); }
+.vehicle-thumb.variant-2::before { height: calc(var(--thumb-height) * .72); border-top: 4px solid rgba(255,255,255,.58); }
+.vehicle-thumb.variant-2::after { width: calc(var(--thumb-width) * .36); left: 61%; }
+.vehicle-thumb.variant-3::before { clip-path: polygon(0 22%, 62% 22%, 76% 0, 100% 15%, 100% 100%, 0 100%); }
+.vehicle-thumb.variant-3::after { height: calc(var(--thumb-height) * 1.08); background-color: var(--vehicle-accent); filter: saturate(1.25); }
+.vehicle-thumb.variant-4::before { width: calc(var(--thumb-width) * .86); border-radius: 18px 5px 9px 3px; }
+.vehicle-thumb.variant-4::after { width: calc(var(--thumb-width) * .68); transform: translateX(-57%) skewX(10deg); }
+.vehicle-thumb.variant-5::before { clip-path: polygon(0 46%, 35% 0, 100% 30%, 92% 100%, 5% 100%); border-bottom-width: 6px; }
+.vehicle-thumb.variant-5::after { transform: translateX(-43%) skewX(-12deg); }
+.vehicle-thumb.variant-6::before { height: calc(var(--thumb-height) * 1.25); border-top: 3px solid rgba(255,255,255,.5); border-radius: 3px; }
+.vehicle-thumb.variant-6::after { width: calc(var(--thumb-width) * .3); left: 64%; height: calc(var(--thumb-height) * 1.15); }
+.vehicle-thumb.variant-7::before { width: calc(var(--thumb-width) * 1.12); clip-path: polygon(0 34%, 15% 5%, 85% 5%, 100% 34%, 94% 100%, 6% 100%); }
+.vehicle-thumb.variant-7::after { width: calc(var(--thumb-width) * .58); background-color: var(--vehicle-accent); filter: saturate(1.25); }
 .vehicle-card strong, .vehicle-card small { display: block; }
 .vehicle-card strong { margin-bottom: 6px; font-size: 13px; }
 .vehicle-card small { color: var(--muted); font-size: 9px; letter-spacing: .08em; }

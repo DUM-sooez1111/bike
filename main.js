@@ -136,16 +136,19 @@
       hash,
       variant: hash % 8,
       feature: (hash >>> 5) % 6,
+      profile: (hash >>> 11) % 5,
+      roofStyle: (hash >>> 17) % 4,
+      bumperStyle: (hash >>> 21) % 4,
       accent: accentColor.getHex(),
-      widthScale: .9 + unit(0) * .22,
-      lengthScale: .9 + unit(8) * .22,
-      heightScale: .88 + unit(16) * .25,
-      wheelScale: .9 + unit(24) * .2,
-      cabinShift: (unit(4) - .5) * .42,
-      thumbWidth: 42 + Math.round(unit(0) * 13),
-      thumbHeight: 14 + Math.round(unit(16) * 8),
-      thumbSkew: -7 + Math.round(unit(8) * 14),
-      corner: 3 + Math.round(unit(24) * 10)
+      widthScale: .82 + unit(0) * .43,
+      lengthScale: .82 + unit(8) * .46,
+      heightScale: .78 + unit(16) * .57,
+      wheelScale: .82 + unit(24) * .4,
+      cabinShift: (unit(4) - .5) * 1.3,
+      thumbWidth: 38 + Math.round(unit(0) * 21),
+      thumbHeight: 12 + Math.round(unit(16) * 13),
+      thumbSkew: -12 + Math.round(unit(8) * 24),
+      corner: 2 + Math.round(unit(24) * 14)
     };
   }
 
@@ -347,6 +350,7 @@
   const world = new THREE.Group();
   scene.add(world);
   const colliders = [];
+  const guardrailColliders = [];
   const ramps = [];
   const terrainSurfaces = [];
   const mountainRoadSurfaces = [];
@@ -752,6 +756,15 @@
       ));
       for (let index = 1; index < railPoints.length; index += 1) {
         addGuardrailBeam(railPoints[index - 1], railPoints[index]);
+        guardrailColliders.push({
+          ax: railPoints[index - 1].x,
+          ay: railPoints[index - 1].y,
+          az: railPoints[index - 1].z,
+          bx: railPoints[index].x,
+          by: railPoints[index].y,
+          bz: railPoints[index].z,
+          radius: .2
+        });
       }
       for (let index = 0; index < roadSamples.length; index += 8) {
         const sample = roadSamples[index];
@@ -761,12 +774,6 @@
         post.position.set(x, sample.roadY + .58, z);
         post.castShadow = true;
         guardrailGroup.add(post);
-        colliders.push({
-          minX: x - .2, maxX: x + .2,
-          minZ: z - .2, maxZ: z + .2,
-          minY: sample.roadY,
-          maxY: sample.roadY + 1.2
-        });
       }
     });
     world.add(guardrailGroup);
@@ -1374,8 +1381,10 @@
     if (definition.type === "bike") {
       const bikeLength = visual.lengthScale;
       const bikeWheel = .72 * visual.wheelScale;
-      wheel(0, bikeWheel + .04, 1.62 * bikeLength, bikeWheel, true, .28 + visual.widthScale * .04);
-      wheel(0, bikeWheel + .04, -1.48 * bikeLength, bikeWheel, false, .28 + visual.widthScale * .04);
+      const frontStretch = visual.variant === 1 ? 1.24 : visual.variant === 3 ? 1.1 : .96 + visual.profile * .025;
+      const rearStretch = visual.variant === 2 ? .88 : visual.variant === 6 ? 1.12 : 1;
+      wheel(0, bikeWheel + .04, 1.62 * bikeLength * frontStretch, bikeWheel, true, .28 + visual.widthScale * .04);
+      wheel(0, bikeWheel + .04, -1.48 * bikeLength * rearStretch, bikeWheel, false, .28 + visual.widthScale * .04);
       const frame = makeMesh(new THREE.BoxGeometry(.3 + visual.widthScale * .05, .34, 2.25 * bikeLength), paint, 0, 1.08, .05, body);
       frame.rotation.x = -.08;
       makeMesh(new THREE.BoxGeometry(.48 + visual.widthScale * .1, .36 + visual.heightScale * .06, .86 + visual.lengthScale * .2), paint, 0, 1.35, -.35, body);
@@ -1397,6 +1406,37 @@
         const exhaust = makeMesh(new THREE.CylinderGeometry(.09, .13, 1.05, 7), MAT.rim, -.31, 1.03, -.68, body);
         exhaust.rotation.x = Math.PI / 2;
       }
+      // 바이크도 스포츠·초퍼·스쿠터·더트·투어링 등 서로 다른 실루엣을 갖습니다.
+      if (visual.variant === 0) {
+        const visor = makeMesh(new THREE.PlaneGeometry(.72, .48), MAT.glass, 0, 2.02, 1.25, body);
+        visor.rotation.x = -.28;
+      } else if (visual.variant === 1) {
+        makeMesh(new THREE.BoxGeometry(1.25, .1, .12), MAT.dark, 0, 2.2, 1.15, body);
+        makeMesh(new THREE.BoxGeometry(.62, .18, 1.05), MAT.dark, 0, 1.42, -.62, body);
+      } else if (visual.variant === 2) {
+        makeMesh(new THREE.BoxGeometry(.78, 1.05, .22), accent, 0, 1.48, 1.02, body);
+        makeMesh(new THREE.BoxGeometry(.72, .12, 1.3), paintDark, 0, .92, -.12, body);
+      } else if (visual.variant === 3) {
+        const frontFender = makeMesh(new THREE.BoxGeometry(.42, .12, 1.05), accent, 0, 1.16, 1.42, body);
+        frontFender.rotation.x = -.16;
+        makeMesh(new THREE.BoxGeometry(.48, .12, .95), accent, 0, 1.24, -1.22, body);
+      } else if (visual.variant === 4) {
+        makeMesh(new THREE.BoxGeometry(.48, .62, .72), accent, -.48, 1.22, -.72, body);
+        makeMesh(new THREE.BoxGeometry(.48, .62, .72), accent, .48, 1.22, -.72, body);
+        const screen = makeMesh(new THREE.PlaneGeometry(.8, .72), MAT.glass, 0, 2.12, 1.18, body);
+        screen.rotation.x = -.2;
+      } else if (visual.variant === 5) {
+        makeMesh(new THREE.SphereGeometry(.24, 9, 6), MAT.white, 0, 1.82, 1.72, body);
+        makeMesh(new THREE.BoxGeometry(.7, .1, .72), paintDark, 0, 1.6, -.72, body);
+      } else if (visual.variant === 6) {
+        makeMesh(new THREE.BoxGeometry(.78, .12, 1.0), MAT.dark, 0, 1.5, -1.28, body);
+        makeMesh(new THREE.BoxGeometry(.7, .58, .62), accent, 0, 1.82, -1.38, body);
+      } else {
+        const tallScreen = makeMesh(new THREE.PlaneGeometry(.9, .9), MAT.glass, 0, 2.22, 1.14, body);
+        tallScreen.rotation.x = -.18;
+        makeMesh(new THREE.BoxGeometry(.42, .55, .68), paintDark, -.46, 1.24, -.74, body);
+        makeMesh(new THREE.BoxGeometry(.42, .55, .68), paintDark, .46, 1.24, -.74, body);
+      }
     } else {
       const isBuggy = definition.type === "buggy";
       const isSuper = definition.type === "super";
@@ -1412,7 +1452,8 @@
       const length = baseLength * visual.lengthScale;
       const wheelRadius = baseWheelRadius * visual.wheelScale;
       const cabinY = (isTruck ? 1.86 : isVan ? 1.78 : isKart ? 1.12 : isATV ? 1.38 : isSuper ? 1.48 : 1.65) * visual.heightScale;
-      const bodyHeight = isKart ? .34 : isATV ? .48 : isTruck ? .78 : .68;
+      const profileHeights = [.76, .92, 1.08, 1.24, .86];
+      const bodyHeight = (isKart ? .34 : isATV ? .48 : isTruck ? .78 : .68) * profileHeights[visual.profile];
       const bodyY = wheelRadius + .39;
 
       makeMesh(new THREE.BoxGeometry(width, bodyHeight, length), paint, 0, bodyY, 0, body);
@@ -1451,6 +1492,55 @@
         } else {
           makeMesh(new THREE.BoxGeometry(width * .72, .14, 1.1), MAT.dark, 0, cabinY + .43, -.45 + visual.cabinShift, body);
         }
+      }
+
+      // 같은 카테고리 안에서도 전면부와 측면 실루엣이 확실히 달라지는 차체 프로필입니다.
+      if (visual.profile === 0) {
+        const wedge = makeMesh(
+          new THREE.BoxGeometry(width * .86, .2, length * .23),
+          accent, 0, bodyY + bodyHeight * .58, length * .36, body
+        );
+        wedge.rotation.x = -.09;
+      } else if (visual.profile === 1) {
+        [-1, 1].forEach(side => {
+          makeMesh(
+            new THREE.BoxGeometry(width * .22, .3, length * .34),
+            paintDark, side * width * .39, bodyY + .12, length * .22, body
+          );
+        });
+      } else if (visual.profile === 2) {
+        makeMesh(new THREE.BoxGeometry(width * .82, .34, length * .19), accent, 0, bodyY + bodyHeight * .68, length * .34, body);
+        makeMesh(new THREE.BoxGeometry(width * .68, .18, length * .15), MAT.dark, 0, bodyY + bodyHeight * .66, -length * .39, body);
+      } else if (visual.profile === 3) {
+        makeMesh(new THREE.BoxGeometry(width * .96, .3, .28), MAT.dark, 0, bodyY + .02, length / 2 + .2, body);
+        makeMesh(new THREE.BoxGeometry(width * .96, .26, .28), accent, 0, bodyY + .04, -length / 2 - .2, body);
+      } else {
+        [-1, 1].forEach(side => {
+          makeMesh(new THREE.BoxGeometry(.16, .28, length * .7), accent, side * width * .47, bodyY + .03, 0, body);
+        });
+      }
+
+      if (!isKart && !isATV && visual.roofStyle === 0) {
+        makeMesh(new THREE.BoxGeometry(width * .62, .14, length * .26), MAT.dark, 0, cabinY + .68 * visual.heightScale, -.18 + visual.cabinShift, body);
+      } else if (!isKart && !isATV && visual.roofStyle === 1) {
+        [-1, 1].forEach(side => {
+          makeMesh(new THREE.BoxGeometry(.1, .16, length * .32), MAT.rim, side * width * .28, cabinY + .72 * visual.heightScale, -.2 + visual.cabinShift, body);
+        });
+      } else if (!isKart && !isATV && visual.roofStyle === 2) {
+        const scoop = makeMesh(new THREE.BoxGeometry(width * .3, .24, length * .18), accent, 0, cabinY + .72 * visual.heightScale, -.05 + visual.cabinShift, body);
+        scoop.rotation.x = -.08;
+      } else if (!isKart && !isATV) {
+        makeMesh(new THREE.BoxGeometry(width * .48, .36, length * .24), paintDark, 0, cabinY + .78 * visual.heightScale, -.28 + visual.cabinShift, body);
+      }
+
+      if (visual.bumperStyle === 1 && !isKart) {
+        makeMesh(new THREE.BoxGeometry(width * .64, .12, .18), MAT.rim, 0, bodyY + .36, length / 2 + .16, body);
+      } else if (visual.bumperStyle === 2) {
+        [-1, 1].forEach(side => {
+          makeMesh(new THREE.BoxGeometry(width * .2, .16, .2), accent, side * width * .3, bodyY + .4, length / 2 + .12, body);
+        });
+      } else if (visual.bumperStyle === 3 && !isKart && !isATV) {
+        makeMesh(new THREE.BoxGeometry(width * .76, .1, length * .18), MAT.dark, 0, bodyY + bodyHeight + .08, -length * .38, body);
       }
       const lampX = width * .29;
       makeMesh(new THREE.BoxGeometry(width * .22, .25, .08), MAT.white, -lampX, bodyY + .12, length / 2 + .04, body);
@@ -1705,6 +1795,44 @@
     return exits[0];
   }
 
+  function getGuardrailContact(rail, position, vehicleRadius) {
+    const segmentX = rail.bx - rail.ax;
+    const segmentZ = rail.bz - rail.az;
+    const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+    const t = lengthSquared > .001
+      ? THREE.MathUtils.clamp(
+        ((position.x - rail.ax) * segmentX + (position.z - rail.az) * segmentZ) / lengthSquared,
+        0,
+        1
+      )
+      : 0;
+    const closestX = rail.ax + segmentX * t;
+    const closestZ = rail.az + segmentZ * t;
+    const railY = THREE.MathUtils.lerp(rail.ay, rail.by, t);
+    if (Math.abs(position.y + .65 - railY) > 1.25) return null;
+    const dx = position.x - closestX;
+    const dz = position.z - closestZ;
+    const distance = Math.hypot(dx, dz);
+    const contactDistance = vehicleRadius + rail.radius;
+    if (distance >= contactDistance) return null;
+    let normalX = dx;
+    let normalZ = dz;
+    if (distance < .001) {
+      const length = Math.max(Math.hypot(segmentX, segmentZ), .001);
+      normalX = -segmentZ / length;
+      normalZ = segmentX / length;
+    } else {
+      normalX /= distance;
+      normalZ /= distance;
+    }
+    return {
+      normalX,
+      normalZ,
+      x: closestX + normalX * (contactDistance + .05),
+      z: closestZ + normalZ * (contactDistance + .05)
+    };
+  }
+
   function applyAIBounce(ai, normalX, normalZ, impactSpeed = ai.speed) {
     let length = Math.hypot(normalX, normalZ);
     if (length < .001) {
@@ -1747,6 +1875,18 @@
           );
           break;
         }
+      }
+      for (const rail of guardrailColliders) {
+        const contact = getGuardrailContact(rail, ai.root.position, radius);
+        if (!contact) continue;
+        if (ai.collisionCooldown <= 0) applyAIBounce(ai, contact.normalX, contact.normalZ, ai.speed + 4);
+        ai.root.position.x = contact.x;
+        ai.root.position.z = contact.z;
+        ai.knockbackOffset.set(
+          ai.root.position.x - ai.pathPosition.x,
+          ai.root.position.z - ai.pathPosition.z
+        );
+        break;
       }
     });
 
@@ -2363,6 +2503,16 @@
         state.position.z = contact.z;
         return;
       }
+    }
+    for (const rail of guardrailColliders) {
+      const contact = getGuardrailContact(rail, state.position, radius);
+      if (!contact) continue;
+      if (state.collisionCooldown <= 0) {
+        applyCollisionBounce(contact.normalX, contact.normalZ, previous, Math.abs(state.velocity) + 4);
+      }
+      state.position.x = contact.x;
+      state.position.z = contact.z;
+      return;
     }
     for (const ai of aiVehicles) {
       const aiRadius = ai.definition.type === "bike" ? .9 : 1.45;
