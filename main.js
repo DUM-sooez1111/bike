@@ -1918,7 +1918,7 @@
       let steering = 0;
       ai.collisionCooldown = Math.max(0, ai.collisionCooldown - dt);
       ai.speedScale = THREE.MathUtils.lerp(ai.speedScale, 1, 1 - Math.exp(-2.5 * dt));
-      const waterSpeedScale = isPositionInWater(ai.pathPosition) ? .38 : 1;
+      const waterSpeedScale = isPositionInWater(ai.pathPosition) ? .58 : 1;
       const riverFlow = getRiverFlow(ai.pathPosition);
       const actualSpeed = ai.speed * ai.speedScale * waterSpeedScale;
       ai.decisionTimer -= dt;
@@ -2543,8 +2543,8 @@
     const braking = !!keys.shift;
     const inWaterBeforeMove = isPositionInWater(state.position) && state.position.y < WATER_LEVEL + .3;
     const riverFlowBeforeMove = getRiverFlow(state.position);
-    const waterPropulsion = inWaterBeforeMove ? .38 : 1;
-    const waterSteering = inWaterBeforeMove ? .56 : 1;
+    const waterPropulsion = inWaterBeforeMove ? .62 : 1;
+    const waterSteering = inWaterBeforeMove ? .7 : 1;
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
     const surfaceBeforeMove = getSurfaceInfo(state.position);
@@ -2597,9 +2597,17 @@
     }
     state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed * 1.35);
     if (inWaterBeforeMove) {
-      // 물속에서는 강한 저항을 받지만 멈춰 갇히지 않도록 저속 추진력은 유지합니다.
-      state.velocity *= Math.exp(-1.35 * dt);
-      state.velocity = THREE.MathUtils.clamp(state.velocity, -6.5, 10);
+      // 물에 닿는 순간 속도를 잘라내지 않고 저항과 제한 속도에 몇 초 동안 부드럽게 수렴합니다.
+      state.velocity *= Math.exp(-.22 * dt);
+      const waterForwardLimit = spec.maxSpeed * .62;
+      const waterReverseLimit = PHYSICS.maxReverse * .72;
+      if (state.velocity > waterForwardLimit) {
+        const excess = state.velocity - waterForwardLimit;
+        state.velocity -= Math.min(excess, (2.2 + excess * .28) * dt);
+      } else if (state.velocity < -waterReverseLimit) {
+        const excess = -waterReverseLimit - state.velocity;
+        state.velocity += Math.min(excess, (1.8 + excess * .28) * dt);
+      }
     }
     if (state.drift > .02) {
       const driftDrag = (.9 + Math.abs(state.velocity) * .045) * state.drift;
