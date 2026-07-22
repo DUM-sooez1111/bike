@@ -168,6 +168,15 @@ kbd, .prompt-key {
 .vehicle-thumb.type-super::before { border-radius: 12px 18px 3px 3px; }
 .vehicle-thumb.type-buggy::after { background: repeating-linear-gradient(90deg, #111a20 0 3px, var(--vehicle-accent) 3px 5px); border-radius: 3px; }
 .vehicle-thumb.type-roadster::after { height: calc(var(--thumb-height) * .38); border-radius: 12px 12px 2px 2px; }
+.vehicle-thumb.type-boat::before {
+  width: calc(var(--thumb-width) * 1.05); height: calc(var(--thumb-height) * .62); bottom: 13px;
+  border-radius: 50% 50% 15px 15px; border-bottom: 5px solid #61d8f2;
+  box-shadow: none; clip-path: polygon(5% 0, 100% 12%, 82% 100%, 17% 100%);
+}
+.vehicle-thumb.type-boat::after {
+  width: calc(var(--thumb-width) * .42); height: calc(var(--thumb-height) * .62);
+  bottom: 25px; border-radius: 9px 12px 2px 2px;
+}
 .vehicle-thumb.type-truck::before { height: calc(var(--thumb-height) * 1.12); border-radius: 3px; }
 .vehicle-thumb.type-truck::after { width: calc(var(--thumb-width) * .4); height: calc(var(--thumb-height) * 1.05); left: 64%; border-radius: 3px 7px 2px 2px; }
 .vehicle-thumb.type-van::before { height: calc(var(--thumb-height) * 1.2); border-radius: 8px 8px 3px 3px; }

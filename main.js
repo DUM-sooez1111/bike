@@ -46,6 +46,12 @@
       color: 0xbe55ff, maxSpeed: 48, acceleration: 25, braking: 31, handling: 2.22,
       description: "폭발적인 가속과 날카로운 조향의 더트 바이크. 공중에서는 아주 적은 조작만 가능합니다.",
       scores: { "최고속도": 90, "가속력": 100, "제동력": 63, "핸들링": 100 }
+    },
+    {
+      id: "lake-skimmer", name: "Lake Skimmer", type: "boat", className: "WATERCRAFT",
+      color: 0x24a9df, maxSpeed: 46, acceleration: 21, braking: 28, handling: 2.05,
+      description: "호수와 강에서 빠르게 달리는 무료 전용 보트. 육지에서는 매우 느리게 움직입니다.",
+      scores: { "최고속도": 88, "가속력": 86, "제동력": 66, "핸들링": 92 }
     }
   ];
 
@@ -114,6 +120,7 @@
     ["buggy", "버기"],
     ["roadster", "로드스터"],
     ["bike", "바이크"],
+    ["boat", "보트"],
     ["truck", "트럭"],
     ["van", "밴"],
     ["kart", "카트"],
@@ -197,6 +204,15 @@
     heading: Math.PI,
     unlockMinutes: 0
   });
+  DESTINATIONS.push({
+    name: "그랜드 레이크",
+    copy: "보트로 달릴 수 있는 동쪽 외곽의 초대형 호수",
+    icon: "🚤",
+    x: 790,
+    z: 382,
+    heading: 0,
+    unlockMinutes: 0
+  });
 
   const PAINTS = [
     { name: "선셋 오렌지", value: 0xf05a35 },
@@ -210,7 +226,7 @@
   const ACCESSORIES = [
     { id: "flag", icon: "🚩", name: "트레일 깃발" },
     { id: "lights", icon: "✨", name: "루프 라이트" },
-    { id: "spoiler", icon: "🏁", name: "스포츠 스포일러", excludeTypes: ["bike"] },
+    { id: "spoiler", icon: "🏁", name: "스포츠 스포일러", excludeTypes: ["bike", "boat"] },
     { id: "antenna", icon: "📡", name: "탐험 안테나" }
   ];
 
@@ -236,7 +252,7 @@
   const boostValue = $("#boost-value");
   const moneyText = $("#money");
   // 기존 800×800 맵을 1400×1400으로 확장합니다.
-  const WORLD_HALF_SIZE = 700;
+  const WORLD_HALF_SIZE = 1100;
   const WORLD_SIZE = WORLD_HALF_SIZE * 2;
   const SAVE_KEY = "neon-trails-save-v1";
   let savedGame = {};
@@ -288,10 +304,10 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x91cbed);
-  scene.fog = new THREE.Fog(0x9bcde3, 240, 980);
+  scene.fog = new THREE.Fog(0x9bcde3, 300, 1580);
 
   // 확장된 맵의 산과 하늘이 원거리 절단면에 잘리지 않도록 충분한 시야 거리를 둡니다.
-  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 2200);
+  const camera = new THREE.PerspectiveCamera(59, innerWidth / innerHeight, 0.1, 3400);
   camera.position.set(0, 7, -14);
 
   const flatMaterial = (color, roughness = 0.86, metalness = 0.02) =>
@@ -334,7 +350,7 @@
   // 이미지 파일이 없어도 자연스러운 그라데이션 하늘이 보이는 스카이 돔입니다.
   const sky = new THREE.Mesh(
     // 카메라보다 작은 원거리 절단면 안에 항상 들어오는 크기로 유지합니다.
-    new THREE.SphereGeometry(1000, 24, 12),
+    new THREE.SphereGeometry(1700, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -370,7 +386,7 @@
   const WATER_LEVEL = .18;
 
   // 물가를 실제로 파낼 수 있도록 지면을 촘촘한 격자로 만듭니다.
-  const groundGeometry = new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30, 220, 220);
+  const groundGeometry = new THREE.PlaneGeometry(WORLD_SIZE + 30, WORLD_SIZE + 30, 300, 300);
   const ground = new THREE.Mesh(groundGeometry, MAT.grass);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -379,7 +395,7 @@
   // 잔디의 단조로움을 깨는 큰 다각형 패치
   const patchGeo = new THREE.CircleGeometry(1, 7);
   const groundPatches = [];
-  for (let i = 0; i < 560; i += 1) {
+  for (let i = 0; i < 920; i += 1) {
     const patch = new THREE.Mesh(patchGeo, i % 5 === 0 ? MAT.dirt : (i % 2 ? MAT.grassLight : MAT.grassDark));
     patch.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI);
     patch.position.set((Math.random() - .5) * (WORLD_SIZE - 24), .008, (Math.random() - .5) * (WORLD_SIZE - 24));
@@ -724,6 +740,12 @@
   addRoadPath([[-565,-315],[-565,-330],[-555,-344],[-540,-355]], 12, MAT.dirt);
   addRacingCircuit();
   addRoadPath([[68,-490],[115,-492],[155,-497],[188,-500]], 12);
+  // Extended-world arterials lead toward the new outer fields and giant lake.
+  addRoadPath([[-620,42],[-735,38],[-850,45],[-985,55]], 10);
+  addRoadPath([[68,-620],[72,-740],[65,-860],[58,-995]], 10);
+  addRoadPath([[80,620],[86,735],[78,855],[72,990]], 10);
+  addRoadPath([[585,-265],[700,-278],[815,-298],[955,-315]], 10);
+  addRoadPath([[545,430],[560,452],[558,476]], 11);
 
   // 새 외곽 지역으로 이어지는 긴 흙길입니다.
   addBox(-218, .025, 42, 155, .05, 15, MAT.dirt, 0, false);
@@ -1197,6 +1219,30 @@
   world.add(lake);
   waterZones.push({ type: "ellipse", x: -258, z: -185, radiusX: 57, radiusZ: 34, waterLevel: WATER_LEVEL });
 
+  // The eastern outer region contains a very large driveable lake with a broad shore.
+  const grandLakeCenter = { x: 790, z: 515 };
+  const grandLakeShore = new THREE.Mesh(new THREE.RingGeometry(150, 160, 40), MAT.dirt);
+  grandLakeShore.rotation.x = -Math.PI / 2;
+  grandLakeShore.position.set(grandLakeCenter.x, .024, grandLakeCenter.z);
+  grandLakeShore.scale.set(1.55, 1, 1);
+  grandLakeShore.receiveShadow = true;
+  world.add(grandLakeShore);
+  const grandLake = new THREE.Mesh(new THREE.CircleGeometry(150, 40), waterMaterial.clone());
+  grandLake.rotation.x = -Math.PI / 2;
+  grandLake.position.set(grandLakeCenter.x, WATER_LEVEL, grandLakeCenter.z);
+  grandLake.scale.set(1.55, 1, 1);
+  grandLake.receiveShadow = true;
+  world.add(grandLake);
+  waterZones.push({
+    type: "ellipse",
+    x: grandLakeCenter.x,
+    z: grandLakeCenter.z,
+    radiusX: 232.5,
+    radiusZ: 150,
+    waterLevel: WATER_LEVEL,
+    grandLake: true
+  });
+
   // 굽이치는 강: 강둑, 수면, 물가 선을 같은 곡선에서 생성해 자연스럽게 이어 붙입니다.
   const riverCenterZ = x => 205 + Math.sin((x - 85) * .018) * 10 + Math.sin((x - 85) * .041) * 3;
   const riverWidth = x => 23 + Math.sin(x * .026) * 3.5;
@@ -1328,8 +1374,8 @@
 
   function addBridgeApproach(z, rotationY) {
     const width = 18;
-    const length = 14;
-    const height = 1.4;
+    const length = 30;
+    const height = 5;
     const mesh = new THREE.Mesh(createRampGeometry(width, length, height), MAT.road);
     mesh.position.set(85, 0, z);
     mesh.rotation.y = rotationY;
@@ -1338,16 +1384,19 @@
     terrainSurfaces.push({ type: "slope", x: 85, z, rotationY, width, length, height });
   }
 
-  // 얇은 다리 상판과 양쪽 완만한 진입로를 연결해 수직 턱을 없앱니다.
-  addBox(85, .03, 166, 18, .06, 14, MAT.road, 0, false);
-  addBridgeApproach(180, 0);
-  addBox(85, 1.21, 205, 18, .38, 36, MAT.road, 0, false);
-  addBridgeApproach(230, Math.PI);
-  addBox(85, .03, 244, 18, .06, 14, MAT.road, 0, false);
-  addBox(76.45, 1.74, 205, .32, .68, 36, MAT.yellow);
-  addBox(93.55, 1.74, 205, .32, .68, 36, MAT.yellow);
-  addBox(85, 1.415, 205, .22, .03, 34, MAT.roadEdge, 0, false);
-  terrainSurfaces.push({ type: "box", minX: 76, maxX: 94, minZ: 187, maxZ: 223, height: 1.4 });
+  // 상판 아래에 충분한 통과 공간을 확보하고 긴 진입로로 경사를 완만하게 만듭니다.
+  addBox(85, .03, 150, 18, .06, 14, MAT.road, 0, false);
+  addBridgeApproach(172, 0);
+  addBox(85, 4.78, 205, 18, .44, 36, MAT.road, 0, false);
+  addBridgeApproach(238, Math.PI);
+  addBox(85, .03, 260, 18, .06, 14, MAT.road, 0, false);
+  addBox(76.45, 5.38, 205, .32, .76, 36, MAT.yellow);
+  addBox(93.55, 5.38, 205, .32, .76, 36, MAT.yellow);
+  addBox(85, 5.015, 205, .22, .03, 34, MAT.roadEdge, 0, false);
+  // 교각은 강 중앙 통로를 막지 않도록 상판 양쪽 바깥에 둡니다.
+  addBox(74.6, 2.25, 194, .8, 4.5, 1.25, MAT.concreteDark);
+  addBox(95.4, 2.25, 216, .8, 4.5, 1.25, MAT.concreteDark);
+  terrainSurfaces.push({ type: "box", minX: 76, maxX: 94, minZ: 187, maxZ: 223, height: 5, elevated: true });
 
   // 나무와 돌이 호수·강 안이나 물가에 겹쳐 생성되지 않도록 여유 공간까지 검사합니다.
   function overlapsWater(x, z, clearance = 0) {
@@ -1445,6 +1494,17 @@
       Math.cos(angle) * radius,
       Math.sin(angle) * radius,
       .78 + Math.random() * .82
+    );
+  }
+
+  // Sparse outer woodland keeps the enlarged map readable without overloading mobile GPUs.
+  for (let i = 0; i < 96; i += 1) {
+    const angle = i / 96 * Math.PI * 2 + (Math.random() - .5) * .05;
+    const radius = 700 + Math.random() * 340;
+    addTree(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      .8 + Math.random() * .72
     );
   }
 
@@ -1668,7 +1728,25 @@
       if (front) frontPivots.push(pivot);
     }
 
-    if (definition.type === "bike") {
+    if (definition.type === "boat") {
+      // Low-poly speedboat: a tapered hull, raised deck and rear motor with no wheels.
+      const hull = makeMesh(new THREE.ConeGeometry(1.62, 5.8, 6), paint, 0, .92, 0, body);
+      hull.rotation.x = Math.PI / 2;
+      hull.scale.z = .5;
+      makeMesh(new THREE.BoxGeometry(2.35, .22, 3.5), paintDark, 0, 1.12, -.45, body);
+      const bowDeck = makeMesh(new THREE.BoxGeometry(1.75, .18, 1.45), accent, 0, 1.25, 1.3, body);
+      bowDeck.rotation.x = -.08;
+      makeMesh(new THREE.BoxGeometry(1.55, .82, 1.35), paint, 0, 1.58, -.25, body);
+      const windshield = makeMesh(new THREE.PlaneGeometry(1.42, .62), MAT.glass, 0, 2.02, .45, body);
+      windshield.rotation.x = -.28;
+      makeMesh(new THREE.BoxGeometry(1.28, .22, .78), MAT.dark, 0, 1.58, -.98, body);
+      const motor = makeMesh(new THREE.BoxGeometry(.72, .9, .72), MAT.concreteDark, 0, 1.02, -2.72, body);
+      motor.rotation.x = -.08;
+      const propeller = makeMesh(new THREE.BoxGeometry(1.0, .12, .18), MAT.rim, 0, .48, -3.02, body);
+      propeller.rotation.z = .18;
+      makeMesh(new THREE.BoxGeometry(.12, .72, .12), MAT.dark, 0, 2.15, -.12, body);
+      makeMesh(new THREE.SphereGeometry(.18, 7, 5), MAT.orange, 0, 2.52, -.12, body);
+    } else if (definition.type === "bike") {
       const bikeLength = visual.lengthScale;
       const bikeWheel = .72 * visual.wheelScale;
       const frontStretch = visual.variant === 1 ? 1.24 : visual.variant === 3 ? 1.1 : .96 + visual.profile * .025;
@@ -2646,7 +2724,12 @@
         if (
           position.x >= terrain.minX - margin && position.x <= terrain.maxX + margin &&
           position.z >= terrain.minZ - margin && position.z <= terrain.maxZ + margin
-        ) return { height: terrain.height, pitch: 0, ramp: null, terrain, progress: 0 };
+        ) {
+          // Elevated bridge decks only catch vehicles already travelling on top.
+          // Vehicles at water level continue on the river bed beneath the bridge.
+          if (terrain.elevated && position.y < terrain.height - 1.7) continue;
+          return { height: terrain.height, pitch: 0, ramp: null, terrain, progress: 0 };
+        }
       } else if (terrain.type === "slope") {
         const local = localRampCoordinates(terrain, position);
         if (
@@ -2932,6 +3015,7 @@
 
   function updatePhysics(dt) {
     const spec = currentVehicle();
+    const isBoat = spec.type === "boat";
     const throttle = keys.w ? 1 : 0;
     const reverse = keys.s ? 1 : 0;
     const braking = !!keys.shift;
@@ -2939,9 +3023,13 @@
     const inWaterBeforeMove = waterBeforeMove.active && state.position.y < waterBeforeMove.waterLevel + .3;
     const waterAmount = inWaterBeforeMove ? waterBeforeMove.submersion : 0;
     const riverFlowBeforeMove = waterBeforeMove.flow;
-    const waterPropulsion = THREE.MathUtils.lerp(1, .62, waterAmount);
+    const waterPropulsion = isBoat
+      ? (inWaterBeforeMove ? 1.08 : .07)
+      : THREE.MathUtils.lerp(1, .62, waterAmount);
     const hydroplane = THREE.MathUtils.clamp(Math.abs(state.velocity) / 32, 0, 1) * waterAmount;
-    const waterSteering = THREE.MathUtils.lerp(1, .7, waterAmount) * THREE.MathUtils.lerp(1, .78, hydroplane);
+    const waterSteering = isBoat
+      ? (inWaterBeforeMove ? 1.18 : .2)
+      : THREE.MathUtils.lerp(1, .7, waterAmount) * THREE.MathUtils.lerp(1, .78, hydroplane);
     // 요청된 반전 조작: D는 좌회전, A는 우회전으로 매핑합니다.
     const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
     const surfaceBeforeMove = getSurfaceInfo(state.position);
@@ -2949,7 +3037,7 @@
     const forwardSlope = state.grounded
       ? surfaceSlopeForHeading(surfaceBeforeMove, state.travelHeading)
       : 0;
-    const canDrift = state.grounded && !onRampBeforeMove && !inWaterBeforeMove && Math.abs(state.velocity) > 6;
+    const canDrift = state.grounded && !isBoat && !onRampBeforeMove && !inWaterBeforeMove && Math.abs(state.velocity) > 6;
     const driftTarget = keys[" "] && canDrift ? 1 : 0;
     state.drift = THREE.MathUtils.lerp(state.drift, driftTarget, 1 - Math.exp(-(driftTarget ? 8 : 11) * dt));
 
@@ -2970,7 +3058,7 @@
     const boostRequested =
       !!keys.control &&
       state.grounded &&
-      !inWaterBeforeMove &&
+      (isBoat ? inWaterBeforeMove : !inWaterBeforeMove) &&
       !braking &&
       state.velocity >= -.2 &&
       state.boostCharge > .005;
@@ -2993,12 +3081,22 @@
       state.velocity -= Math.min(overspeed, (spec.acceleration + 10) * dt);
     }
     state.velocity = THREE.MathUtils.clamp(state.velocity, -PHYSICS.maxReverse, spec.maxSpeed * 1.35);
+    if (isBoat && !inWaterBeforeMove) {
+      // The hull scrapes along land; it can crawl back to water but cannot drive like a car.
+      state.velocity *= Math.exp(-1.8 * dt);
+      const landLimit = 3.2;
+      if (Math.abs(state.velocity) > landLimit) {
+        state.velocity -= Math.sign(state.velocity) * Math.min(Math.abs(state.velocity) - landLimit, 7 * dt);
+      }
+    }
     if (inWaterBeforeMove) {
       // 물에 닿는 순간 속도를 잘라내지 않고 저항과 제한 속도에 몇 초 동안 부드럽게 수렴합니다.
       const relativeSpeed = Math.abs(state.velocity);
-      const quadraticDrag = (.035 + relativeSpeed * .0025) * waterAmount;
+      const quadraticDrag = (isBoat ? .018 + relativeSpeed * .0011 : .035 + relativeSpeed * .0025) * waterAmount;
       state.velocity *= Math.exp(-quadraticDrag * dt);
-      const waterForwardLimit = THREE.MathUtils.lerp(spec.maxSpeed, spec.maxSpeed * .62, waterAmount);
+      const waterForwardLimit = isBoat
+        ? spec.maxSpeed * 1.05
+        : THREE.MathUtils.lerp(spec.maxSpeed, spec.maxSpeed * .62, waterAmount);
       const waterReverseLimit = THREE.MathUtils.lerp(PHYSICS.maxReverse, PHYSICS.maxReverse * .72, waterAmount);
       if (state.velocity > waterForwardLimit) {
         const excess = state.velocity - waterForwardLimit;
@@ -3076,7 +3174,9 @@
     state.inWater = waterAfterMove.active && surface.height < waterAfterMove.waterLevel;
     state.waterSubmersion = state.inWater ? waterAfterMove.submersion : 0;
     const floatTarget = state.inWater
-      ? Math.min(waterAfterMove.depth * .42, spec.type === "bike" ? .38 : .72) * state.waterSubmersion
+      ? (isBoat
+          ? Math.max(0, waterAfterMove.waterLevel - surface.height + .08) * state.waterSubmersion
+          : Math.min(waterAfterMove.depth * .42, spec.type === "bike" ? .38 : .72) * state.waterSubmersion)
       : 0;
     state.waterLift = THREE.MathUtils.lerp(state.waterLift, floatTarget, 1 - Math.exp(-2.4 * dt));
     if (state.inWater && !state.wasInWater) {
@@ -3239,9 +3339,10 @@
     const sideViewAmount = Math.abs(Math.sin(cameraYaw));
     const distance = (tinyScreen ? 16.4 : compactScreen ? 13.2 : 10.8) + speedRatio * 3.3 + sideViewAmount * 1.6;
     const angle = state.heading + cameraYaw;
+    const visualHeight = currentVehicle().type === "boat" ? state.waterLift : 0;
     desiredCamera.set(
       state.position.x - Math.sin(angle) * distance,
-      state.position.y + (tinyScreen ? 6.35 : 5.2) + speedRatio + cameraPitch * 8,
+      state.position.y + visualHeight + (tinyScreen ? 6.35 : 5.2) + speedRatio + cameraPitch * 8,
       state.position.z - Math.cos(angle) * distance
     );
     camera.position.lerp(desiredCamera, 1 - Math.exp(-4.4 * dt));
@@ -3251,7 +3352,7 @@
     const lookAhead = 4 * (1 - sideViewAmount * .92);
     cameraTarget.set(
       state.position.x + Math.sin(state.heading) * lookAhead,
-      state.position.y + (tinyScreen ? .72 : 1.25),
+      state.position.y + visualHeight + (tinyScreen ? .72 : 1.25),
       state.position.z + Math.cos(state.heading) * lookAhead
     );
     smoothedTarget.lerp(cameraTarget, 1 - Math.exp(-7 * dt));
